@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block content %}
+  <h2>Transaction History</h2>
+  <table class="table table-striped mt-3">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Amount</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in transactions %}
+        <tr>
+          <td>{{ tx.type.capitalize() }}</td>
+          <td>${{ "%.2f"|format(tx.amount) }}</td>
+          <td>{{ tx.timestamp }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3">No transactions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
