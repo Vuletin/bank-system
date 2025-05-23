@@ -1,16 +1,17 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash, g
+from sqlite3.dbapi2 import Timestamp
+from flask import Flask, render_template, request, redirect, session, url_for, flash, g, send_file
 from flask_bcrypt import Bcrypt
+from dotenv import load_dotenv
+from io import StringIO, BytesIO
+from datetime import datetime
 import sqlite3
 import os
-from dotenv import load_dotenv
+import csv
 
 load_dotenv()
 app = Flask(__name__)
 # Fallback if no .env
 app.secret_key = os.getenv("SECRET_KEY", "fallback-secret")
-
-if __name__ == "__main__":
-    app.run(debug=True)
 
 bcrypt = Bcrypt(app)
 
@@ -80,7 +81,13 @@ def dashboard():
 
     db = get_db()
     user = db.execute("SELECT username, balance FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    return render_template("dashboard.html", balance=user["balance"])
+
+    # Notification: get and mark as seen
+    notifications = db.execute("SELECT * FROM notifications WHERE user_id = ? AND seen = 0 ORDER BY timestamp DESC", (session["user_id"],)).fetchall()
+    db.commit()
+
+    # Mark as read
+    return render_template("dashboard.html", balance=user["balance"], username=user["username"], notifications=notifications)
 
 @app.route("/transaction", methods=["POST"])
 def transaction():
@@ -97,6 +104,8 @@ def transaction():
     if amount <= 0:
         flash("Amount must be greater than zero.")
         return redirect(url_for("dashboard"))
+    
+    note = request.form.get("note", "")
 
     db = get_db()
     user = db.execute("SELECT balance FROM users WHERE id = ?", (session["user_id"],)).fetchone()
@@ -116,11 +125,71 @@ def transaction():
         return redirect(url_for("dashboard"))
 
     db.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, session["user_id"]))
-    db.execute("INSERT INTO transactions (user_id, type, amount) VALUES (?, ?, ?)", 
-        (session["user_id"], action, amount))
-
+    db.execute("""
+        INSERT INTO transactions (user_id, type, amount, note)
+        VALUES (?, ?, ?, ?)
+    """, (session["user_id"], action, amount, note))
     db.commit()
     return redirect(url_for("dashboard"))
+
+@app.route("/transfer", methods=["POST"])
+def transfer():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    sender_id = session["user_id"]
+    recipient_username = request.form.get("recipient")
+    amount = float(request.form.get("amount", 0))
+    note = request.form.get("note", "")
+
+    if amount <= 0:
+        flash("Amount must be greater than zero.")
+        return redirect(url_for("dashboard"))
+
+    db = get_db()
+
+    # Check if recipient exists
+    recipient = db.execute("SELECT id FROM users WHERE username = ?", (recipient_username,)).fetchone()
+    if not recipient:
+        flash("Recipient user not found.")
+        return redirect(url_for("dashboard"))
+
+    recipient_id = recipient["id"]
+
+    # Get sender balance
+    sender = db.execute("SELECT balance FROM users WHERE id = ?", (sender_id,)).fetchone()
+    if sender["balance"] < amount:
+        flash("Insufficient funds.")
+        return redirect(url_for("dashboard"))
+
+    # Perform the transfer
+    db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (amount, sender_id))
+    db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, recipient_id))
+
+    # Log transaction for sender
+    db.execute("""
+        INSERT INTO transactions (user_id, type, amount, note, recipient_id)
+        VALUES (?, 'transfer_out', ?, ?, ?)
+    """, (sender_id, amount, note, recipient_id))
+
+    # Log transaction for recipient
+    db.execute("""
+        INSERT INTO transactions (user_id, type, amount, note, recipient_id)
+        VALUES (?, 'transfer_in', ?, ?, ?)
+    """, (recipient_id, amount, note, sender_id))
+
+    # Notification when user receives money
+    sender = db.execute("SELECT username FROM users WHERE id = ?", (sender_id,)).fetchone()
+    sender_username = sender["username"]
+    
+    message = f"You received ${amount:.2f} from {sender_username}."
+    db.execute("INSERT INTO notifications (user_id, message) VALUES (?, ?)", (recipient_id, message))
+
+    db.commit()
+    flash(f"Transferred ${amount:.2f} to {recipient_username}.")
+    return redirect(url_for("dashboard"))
+
+
 
 @app.route("/history")
 def history():
@@ -128,10 +197,99 @@ def history():
         return redirect(url_for("login"))
 
     db = get_db()
-    transactions = db.execute(
-        "SELECT type, amount, timestamp FROM transactions WHERE user_id = ? ORDER BY timestamp DESC",
-        (session["user_id"],)
-    ).fetchall()
+    user_id = session["user_id"]
+
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    tx_type = request.args.get("type")
+
+    query = "SELECT type, amount, timestamp, note FROM transactions WHERE user_id = ?"
+    params = [user_id]
+
+    if start_date:
+        query += " AND timestamp >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND timestamp <= ?"
+        params.append(end_date + " 23:59:59")
+    if tx_type:
+        query += " AND type = ?"
+        params.append(tx_type)
+
+    query += " ORDER BY timestamp DESC"
+    transactions = db.execute(query, params).fetchall()
+
 
     return render_template("history.html", transactions=transactions)
+
+@app.route("/add_note", methods=["POST"])
+def add_note():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    content = request.form.get("content", "").strip()
+    if not content:
+        flash("Note cannot be empty.")
+        return redirect(url_for("dashboard"))
+
+    db = get_db()
+    db.execute("INSERT INTO notes (user_id, content) VALUES (?, ?)", (session["user_id"], content))
+    db.commit()
+    flash("Note added.")
+    return redirect(url_for("dashboard"))
+
+@app.route("/export_csv")
+def export_csv():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    db = get_db()
+    user_id = session["user_id"]
+
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    tx_type = request.args.get("type")
+
+    query = "SELECT type, amount, timestamp, note FROM transactions WHERE user_id = ?"
+    params = [user_id]
+
+    if start_date:
+        query += " AND timestamp >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND timestamp <= ?"
+        params.append(end_date + " 23:59:59")
+    if tx_type:
+        query += " AND type = ?"
+        params.append(tx_type)
+
+    query += " ORDER BY timestamp DESC"
+    transactions = db.execute(query, params).fetchall()
+
+    # Write to a text stream first
+    from io import StringIO
+    string_io = StringIO()
+    writer = csv.writer(string_io)
+    writer.writerow(["Type", "Amount", "Timestamp", "Note"])
+    for tx in transactions:
+        writer.writerow([tx["type"], tx["amount"], tx["timestamp"], tx["note"]])
+
+    # Encode to binary stream
+    mem = BytesIO()
+    mem.write(string_io.getvalue().encode("utf-8"))
+    mem.seek(0)
+
+    # Add today's date to the filename
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+
+    filename = f"transactions_{timestamp}.csv"
+    
+    return send_file(mem,
+                     as_attachment=True,
+                     download_name="transactions.csv",
+                     mimetype="text/csv")
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
 

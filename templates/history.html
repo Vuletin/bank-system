@@ -1,24 +1,54 @@
 {% extends "layout.html" %}
+{% block title %}Transaction History{% endblock %}
+
 {% block content %}
-  <h2>Transaction History</h2>
-  <table class="table table-striped mt-3">
-    <thead>
+<h2>Transaction History</h2>
+
+<form method="get" action="{{ url_for('history') }}" class="row g-3 mb-4">
+  <div class="col-md-3">
+    <label for="start_date" class="form-label">Start date:</label>
+    <input type="date" name="start_date" class="form-control" value="{{ request.args.get('start_date', '') }}">
+  </div>
+  <div class="col-md-3">
+    <label for="end_date" class="form-label">End date:</label>
+    <input type="date" name="end_date" class="form-control" value="{{ request.args.get('end_date', '') }}">
+  </div>
+  <div class="col-md-3">
+    <label for="type" class="form-label">Transaction type:</label>
+    <select name="type" class="form-select">
+      <option value="">All</option>
+      <option value="deposit" {% if request.args.get('type') == 'deposit' %}selected{% endif %}>Deposit</option>
+      <option value="withdraw" {% if request.args.get('type') == 'withdraw' %}selected{% endif %}>Withdraw</option>
+    </select>
+  </div>
+  <div class="col-md-3 d-flex align-items-end">
+    <button type="submit" class="btn btn-primary w-100">Filter</button>
+  </div>
+</form>
+
+<div class="mb-3">
+  <a class="btn btn-outline-secondary" href="{{ url_for('export_csv', start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', ''), type=request.args.get('type', '')) }}">Export to CSV</a>
+</div>
+
+<table class="table table-striped mt-3">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Amount</th>
+      <th>Timestamp</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for tx in transactions %}
       <tr>
-        <th>Type</th>
-        <th>Amount</th>
-        <th>Timestamp</th>
+        <td>{{ tx.type.capitalize() }}</td>
+        <td>${{ "%.2f"|format(tx.amount) }}</td>
+        <td>{{ tx.timestamp }}</td>
+        <td>{{ tx.note }}</td>
       </tr>
-    </thead>
-    <tbody>
-      {% for tx in transactions %}
-        <tr>
-          <td>{{ tx.type.capitalize() }}</td>
-          <td>${{ "%.2f"|format(tx.amount) }}</td>
-          <td>{{ tx.timestamp }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="3">No transactions yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    {% else %}
+      <tr><td colspan="3">No transactions found for this filter.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}
