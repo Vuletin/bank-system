@@ -80,14 +80,54 @@ def dashboard():
         return redirect(url_for("login"))
 
     db = get_db()
-    user = db.execute("SELECT username, balance FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    user_id = session["user_id"]
 
-    # Notification: get and mark as seen
-    notifications = db.execute("SELECT * FROM notifications WHERE user_id = ? AND seen = 0 ORDER BY timestamp DESC", (session["user_id"],)).fetchall()
-    db.commit()
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    tx_type = request.args.get("type")  # Optional
 
-    # Mark as read
-    return render_template("dashboard.html", balance=user["balance"], username=user["username"], notifications=notifications)
+    # Build base query
+    query = "SELECT * FROM transactions WHERE user_id = ?"
+    params = [user_id]
+
+    if start_date:
+        query += " AND timestamp >= ?"
+        params.append(start_date)
+    if end_date:
+        query += " AND timestamp <= ?"
+        params.append(end_date + " 23:59:59")
+    if tx_type and tx_type != "all":
+        query += " AND type = ?"
+        params.append(tx_type)
+
+    query += " ORDER BY timestamp ASC"
+    rows = db.execute(query, params).fetchall()
+
+    # Prepare chart data
+    labels = []
+    balances = []
+    current_balance = 0
+
+    for row in rows:
+        if row["type"] == "deposit" or row["type"] == "transfer_in":
+            current_balance += row["amount"]
+        elif row["type"] == "withdraw" or row["type"] == "transfer_out":
+            current_balance -= row["amount"]
+        labels.append(row["timestamp"][:16])
+        balances.append(current_balance)
+
+    # Fetch user info
+    user = db.execute("SELECT username, balance FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    # Notifications
+    notifications = db.execute("SELECT * FROM notifications WHERE user_id = ? ORDER BY timestamp DESC", (user_id,)).fetchall()
+
+    return render_template("dashboard.html",
+                           username=user["username"],
+                           balance=user["balance"],
+                           labels=labels,
+                           balances=balances,
+                           notifications=notifications)
 
 @app.route("/transaction", methods=["POST"])
 def transaction():
@@ -181,15 +221,15 @@ def transfer():
     # Notification when user receives money
     sender = db.execute("SELECT username FROM users WHERE id = ?", (sender_id,)).fetchone()
     sender_username = sender["username"]
-    
+
+    sender_message = f"You sent ${amount:.2f} to {recipient_username}."
+    db.execute("INSERT INTO notifications (user_id, message) VALUES (?, ?)", (sender_id, sender_message))
+
     message = f"You received ${amount:.2f} from {sender_username}."
     db.execute("INSERT INTO notifications (user_id, message) VALUES (?, ?)", (recipient_id, message))
 
     db.commit()
-    flash(f"Transferred ${amount:.2f} to {recipient_username}.")
     return redirect(url_for("dashboard"))
-
-
 
 @app.route("/history")
 def history():

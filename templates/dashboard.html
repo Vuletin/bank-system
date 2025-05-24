@@ -1,40 +1,14 @@
 {% extends "layout.html" %}
 {% block content %}
-<div class="container mt-4">
 
-  <title>{{ username }}'s Dashboard</title>
-  <p class="lead">Balance: ${{ balance }}</p>
+<title>{{ username }}'s Dashboard</title>
+<p class="lead">Balance: ${{ balance }}</p>
 
-  <!-- Flash Messages -->
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <div class="alert alert-success">
-        <ul class="mb-0">
-        {% for message in messages %}
-          <li>{{ message }}</li>
-        {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-  {% endwith %}
-
-  <!-- Notifications -->
-  {% if notifications %}
-    <div class="alert alert-info mt-3">
-      <h5>Notifications</h5>
-      <ul class="mb-0">
-      {% for note in notifications %}
-        <li>{{ note.message }} <small class="text-muted">({{ note.timestamp }})</small></li>
-      {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
-</div>
-
+<!-- Notifications -->
 {% if notifications %}
-  <div class="alert alert-info">
-    <ul>
+  <div class="alert alert-info mt-3">
+    <h5>Notifications</h5>
+    <ul class="mb-0">
     {% for note in notifications %}
       <li>{{ note.message }} <small class="text-muted">({{ note.timestamp }})</small></li>
     {% endfor %}
@@ -49,7 +23,6 @@
       <h4 class="mb-3 text-center">Transfer Money to Another User</h4>
       <form action="{{ url_for('transfer') }}" method="POST">
         <div class="mb-3">
-          <label for="recipient" class="form-label">Recipient Username</label>
           <input type="text" name="recipient" class="form-control" required>
         </div>
 
@@ -79,8 +52,8 @@
         </div>
 
         <div class="mb-3">
-          <label for="note" class="form-label">Reason <span class="text-muted">(required for deposit/withdraw)</span></label>
-          <textarea name="note" rows="3" class="form-control" placeholder="State the reason for this transaction..." required></textarea>
+          <label for="note" class="form-label">Reason <span class="text-muted">(required)</span></label>
+          <textarea name="note" rows="3" class="form-control" required></textarea>
         </div>
 
         <div class="d-flex gap-2 justify-content-center">
@@ -89,7 +62,89 @@
         </div>
       </form>
     </div>
-  </div>
+
+    <!-- Chart -->
+    <div class="container mt-5 overflow-hidden">
+        <h4 class="text-center mb-3">Balance Over Time</h4>
+        {% if request.args.get('type') %}
+          <p>Showing only: <strong>{{ request.args.get('type').replace('_', ' ').title() }}</strong></p>
+        {% endif %}
+          <div class="text-center mb-3">
+            <label for="chartType">Chart Type: </label>
+            <select id="chartType">
+              <option value="bar">Bar</option>
+              <option value="line">Line</option>
+            </select>
+          </div>
+        <canvas id="balanceChart" style="max-width: 100%; height: auto;"></canvas>
+    </div>
+      
+    <!-- Filter and CSV Export should be here, OUTSIDE of the deposit/withdraw form -->
+    <div class="col-12 text-center mb-4">
+      <form method="get" action="{{ url_for('dashboard') }}" class="d-inline-block me-2">
+        <label for="start_date">Start Date:</label>
+        <input type="date" id="start_date" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        
+        <label for="end_date">End Date:</label>
+        <input type="date" id="end_date" name="end_date" value="{{ request.args.get('end_date', '') }}">
+
+        <label for="type">Type:</label>
+        <select name="type" id="type">
+          <option value="" {% if not request.args.get('type') %}selected{% endif %}>All</option>
+          <option value="deposit" {% if request.args.get('type') == 'deposit' %}selected{% endif %}>Deposit</option>
+          <option value="withdraw" {% if request.args.get('type') == 'withdraw' %}selected{% endif %}>Withdraw</option>
+          <option value="transfer_in" {% if request.args.get('type') == 'transfer_in' %}selected{% endif %}>Transfer In</option>
+          <option value="transfer_out" {% if request.args.get('type') == 'transfer_out' %}selected{% endif %}>Transfer Out</option>
+        </select>
+        <button type="submit">Filter</button>
+      </form>
+
+      <form method="get" action="{{ url_for('export_csv') }}" class="d-inline-block">
+        <input type="hidden" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        <input type="hidden" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        <input type="hidden" name="type" value="{{ request.args.get('type', '') }}">
+        <button class="btn btn-outline-primary btn-sm">Export CSV</button>
+      </form>
+    </div>
 </div>
+
+  <!-- Debug output -->
+  <pre>{{ labels }}</pre>
+  <pre>{{ balances }}</pre>
+
+</div>
+
+<!-- JS goes inside block content -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script type="text/javascript">
+let chart;
+function renderChart(type) {
+  if (chart) chart.destroy();
+
+  chart = new Chart(document.getElementById('balanceChart').getContext('2d'), {
+    type: type,
+    data: {
+      labels: {{ labels|tojson|safe }},
+      datasets: [{
+        label: 'Balance',
+        data: {{ balances|tojson|safe }},
+        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 2,
+        fill: false
+      }]
+    },
+    options: {
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+document.getElementById("chartType").addEventListener("change", function() {
+  renderChart(this.value);
+});
+
+renderChart("bar");
+</script>
 
 {% endblock %}
