@@ -1,0 +1,14 @@
+<h1>Admin Panel</h1>
+<table border="1">
+    <tr>
+        <th>ID</th><th>Username</th><th>Email</th><th>Balance</th>
+    </tr>
+    {% for user in users %}
+    <tr>
+        <td>{{ user.id }}</td>
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+        <td>{{ user.balance }}</td>
+    </tr>
+    {% endfor %}
+</table>

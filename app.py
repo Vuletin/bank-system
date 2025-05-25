@@ -41,17 +41,11 @@ def verify_reset_token(token, max_age=3600):  # 1 hour expiry
     except Exception:
         return None
 
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect("db.sqlite3")
-        g.db.row_factory = sqlite3.Row
-    return g.db
-
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get("is_admin"):
-            flash("Admin access required.")
+            flash("Admin access only.")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
     return decorated_function
@@ -59,7 +53,15 @@ def admin_required(f):
 @app.route("/admin")
 @admin_required
 def admin_panel():
-    ...
+    db = get_db()
+    users = db.execute("SELECT id, username, email, balance FROM users").fetchall()
+    return render_template("admin.html", users=users)
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect("db.sqlite3")
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
 @app.teardown_appcontext
 def close_db(error):
@@ -110,10 +112,13 @@ def login():
         if user and bcrypt.check_password_hash(user["password"], password):
             session["user_id"] = user["id"]
             session["username"] = user["username"]
+            session["is_admin"] = user["is_admin"]  # ✅ Only if login is successful
             flash("Logged in successfully.")
             return redirect(url_for("dashboard"))
         else:
             flash("Invalid credentials.")
+            return redirect(url_for("login"))  # prevent falling through
+
     return render_template("login.html")
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
