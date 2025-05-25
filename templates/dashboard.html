@@ -4,45 +4,42 @@
 <title>{{ username }}'s Dashboard</title>
 <p class="lead">Balance: ${{ balance }}</p>
 
-<!-- Notifications -->
 {% if notifications %}
-  <div class="alert alert-info mt-3">
-    <h5>Notifications</h5>
-    <ul class="mb-0">
+<div class="alert alert-info mt-3">
+  <h5>Notifications</h5>
+  <ul class="mb-0">
     {% for note in notifications %}
       <li>{{ note.message }} <small class="text-muted">({{ note.timestamp }})</small></li>
     {% endfor %}
-    </ul>
-  </div>
+  </ul>
+</div>
 {% endif %}
 
 <div class="container mt-5">
   <div class="row">
-    <!-- Transfer form -->
+
+    <!-- Transfer Form -->
     <div class="col-md-6 mb-4">
       <h4 class="mb-3 text-center">Transfer Money to Another User</h4>
       <form action="{{ url_for('transfer') }}" method="POST">
         <div class="mb-3">
           <input type="text" name="recipient" class="form-control" required>
         </div>
-
         <div class="mb-3">
           <label for="amount" class="form-label">Amount</label>
           <input type="number" step="0.01" name="amount" class="form-control" required>
         </div>
-
         <div class="mb-3">
           <label for="note" class="form-label">Reason (optional)</label>
           <textarea name="note" rows="2" class="form-control"></textarea>
         </div>
-
         <div class="text-center">
           <button type="submit" class="btn btn-primary">Send</button>
         </div>
       </form>
     </div>
 
-    <!-- Deposit/Withdraw form -->
+    <!-- Deposit/Withdraw Form -->
     <div class="col-md-6 mb-4">
       <h4 class="mb-3 text-center">Deposit or Withdraw</h4>
       <form action="{{ url_for('transaction') }}" method="POST">
@@ -50,12 +47,10 @@
           <label for="amount" class="form-label">Amount</label>
           <input type="number" step="0.01" name="amount" class="form-control" required>
         </div>
-
         <div class="mb-3">
           <label for="note" class="form-label">Reason <span class="text-muted">(required)</span></label>
           <textarea name="note" rows="3" class="form-control" required></textarea>
         </div>
-
         <div class="d-flex gap-2 justify-content-center">
           <button type="submit" name="action" value="deposit" class="btn btn-success">Deposit</button>
           <button type="submit" name="action" value="withdraw" class="btn btn-danger">Withdraw</button>
@@ -63,23 +58,29 @@
       </form>
     </div>
 
-    <!-- Chart -->
+    <!-- Charts -->
     <div class="container mt-5 overflow-hidden">
-        <h4 class="text-center mb-3">Balance Over Time</h4>
-        {% if request.args.get('type') %}
-          <p>Showing only: <strong>{{ request.args.get('type').replace('_', ' ').title() }}</strong></p>
-        {% endif %}
-          <div class="text-center mb-3">
-            <label for="chartType">Chart Type: </label>
-            <select id="chartType">
-              <option value="bar">Bar</option>
-              <option value="line">Line</option>
-            </select>
-          </div>
-        <canvas id="balanceChart" style="max-width: 100%; height: auto;"></canvas>
+      <h4 class="text-center mb-3">Balance Over Time</h4>
+
+      {% if request.args.get('type') %}
+        <p>Showing only: <strong>{{ request.args.get('type').replace('_', ' ').title() }}</strong></p>
+      {% endif %}
+
+    <div class="text-center mb-3">
+        <label for="chartType">Chart Type: </label>
+        <select id="chartType">
+          <option value="line" selected>Line</option>
+          <option value="bar">Bar</option>
+        </select>
+      </div>
+
+      <canvas id="transactionChart" style="max-width: 100%; height: auto;"></canvas>
+
+      <h4 class="text-center mt-5">Net Total Over Time</h4>
+      <canvas id="netChart" class="mb-5" style="max-width: 100%; height: auto;"></canvas>
     </div>
-      
-    <!-- Filter and CSV Export should be here, OUTSIDE of the deposit/withdraw form -->
+
+    <!-- Filter + CSV Export -->
     <div class="col-12 text-center mb-4">
       <form method="get" action="{{ url_for('dashboard') }}" class="d-inline-block me-2">
         <label for="start_date">Start Date:</label>
@@ -98,53 +99,155 @@
         </select>
         <button type="submit">Filter</button>
       </form>
+        <!-- ZIP download -->
+        <form class="d-inline-block">
+          <input type="hidden" id="startDateInput" value="{{ request.args.get('start_date', '') }}">
+          <input type="hidden" id="endDateInput" value="{{ request.args.get('end_date', '') }}">
+          <input type="hidden" id="typeInput" value="{{ request.args.get('type', '') }}">
+          <button type="button" id="exportZipBtn" class="btn btn-primary">Download CSV + Chart</button>
+        </form>
 
-      <form method="get" action="{{ url_for('export_csv') }}" class="d-inline-block">
-        <input type="hidden" name="start_date" value="{{ request.args.get('start_date', '') }}">
-        <input type="hidden" name="end_date" value="{{ request.args.get('end_date', '') }}">
-        <input type="hidden" name="type" value="{{ request.args.get('type', '') }}">
-        <button class="btn btn-outline-primary btn-sm">Export CSV</button>
-      </form>
     </div>
+
+    <!-- Debug Info -->
+    <pre>app.config['DEBUG'] = True</pre>
+    <pre>app.config['TEMPLATES_AUTO_RELOAD'] = True</pre>
+
+  </div>
 </div>
 
-  <!-- Debug output -->
-  <pre>{{ labels }}</pre>
-  <pre>{{ balances }}</pre>
-
-</div>
-
-<!-- JS goes inside block content -->
+<!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script type="text/javascript">
-let chart;
-function renderChart(type) {
-  if (chart) chart.destroy();
 
-  chart = new Chart(document.getElementById('balanceChart').getContext('2d'), {
-    type: type,
+<script>
+  // Pass Python variables to JS
+  const labels = {{ labels | tojson }};
+  const typeData = {{ type_data | tojson }};
+  const totals = {{ totals | tojson }};
+  const netLabels = {{ net_labels | tojson }};
+  const netData = {{ net_data | tojson }};
+
+  // Build transaction chart (deposit, withdraw, transfers)
+  const ctxTransaction = document.getElementById('transactionChart').getContext('2d');
+  let currentChartType = document.getElementById('chartType').value;
+
+  const transactionChart = new Chart(ctxTransaction, {
+    type: currentChartType,
     data: {
-      labels: {{ labels|tojson|safe }},
-      datasets: [{
-        label: 'Balance',
-        data: {{ balances|tojson|safe }},
-        backgroundColor: 'rgba(75, 192, 192, 0.5)',
-        borderColor: 'rgba(75, 192, 192, 1)',
-        borderWidth: 2,
-        fill: false
-      }]
+      labels: labels,
+      datasets: [
+        {
+          label: 'Deposit',
+          data: typeData.deposit,
+          backgroundColor: 'rgba(75, 192, 192, 0.5)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          fill: true,
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: 'Withdraw',
+          data: typeData.withdraw,
+          backgroundColor: 'rgba(255, 99, 132, 0.5)',
+          borderColor: 'rgba(255, 99, 132, 1)',
+          fill: true,
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: 'Transfer In',
+          data: typeData.transfer_in,
+          backgroundColor: 'rgba(54, 162, 235, 0.5)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          fill: true,
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: 'Transfer Out',
+          data: typeData.transfer_out,
+          backgroundColor: 'rgba(255, 206, 86, 0.5)',
+          borderColor: 'rgba(255, 206, 86, 1)',
+          fill: true,
+          borderWidth: 1,
+          tension: 0.3,
+        },
+      ],
     },
     options: {
-      scales: { y: { beginAtZero: true } }
-    }
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+        },
+      },
+    },
   });
-}
 
-document.getElementById("chartType").addEventListener("change", function() {
-  renderChart(this.value);
-});
+  // Update chart type when select changes
+  document.getElementById('chartType').addEventListener('change', function() {
+    const newType = this.value;
+    transactionChart.config.type = newType;
+    transactionChart.update();
+  });
 
-renderChart("bar");
+  // Build net total chart
+  const ctxNet = document.getElementById('netChart').getContext('2d');
+  const netChart = new Chart(ctxNet, {
+    type: 'line',
+    data: {
+      labels: netLabels,
+      datasets: [{
+        label: 'Net Total Over Time',
+        data: netData,
+        borderColor: 'purple',
+        backgroundColor: 'rgba(128, 0, 128, 0.3)',
+        fill: true,
+        tension: 0.3,
+      }],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+        },
+      },
+    },
+  });
 </script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script>
+document.getElementById("exportZipBtn").addEventListener("click", async function () {
+  const zip = new JSZip();
+
+  // 1. Fetch CSV from server
+  const res = await fetch("/export_csv" + window.location.search);
+  const csv = await res.text();
+  zip.file("transactions.csv", csv);
+
+  // 2. Get transaction chart image
+  const txImgURL = transactionChart.toBase64Image("image/png");
+  const txBlob = await (await fetch(txImgURL)).blob();
+  zip.file("transaction_chart.png", txBlob);
+
+  // 3. Get net chart image
+  const netImgURL = netChart.toBase64Image("image/png");
+  const netBlob = await (await fetch(netImgURL)).blob();
+  zip.file("net_chart.png", netBlob);
+
+  // 4. NetChart Image 
+  const netChartImage = netChart.toBase64Image("image/png");
+  const netImageBlob = await (await fetch(netChartImage)).blob();
+  zip.file("net_chart.png", netImageBlob);
+
+  // 5. Generate and save ZIP
+  const content = await zip.generateAsync({ type: "blob" });
+  saveAs(content, "export_bundle.zip");
+  });
+</script>
+
 
 {% endblock %}

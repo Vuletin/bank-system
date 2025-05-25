@@ -4,22 +4,62 @@ from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from io import StringIO, BytesIO
 from datetime import datetime
+from flask_mail import Mail, Message
+from itsdangerous import URLSafeTimedSerializer
+from functools import wraps
 import sqlite3
 import os
 import csv
 
-load_dotenv()
 app = Flask(__name__)
-# Fallback if no .env
-app.secret_key = os.getenv("SECRET_KEY", "fallback-secret")
+
+load_dotenv()
+
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS') == 'True'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+
+print("MAIL_USERNAME:", app.config['MAIL_USERNAME'])
+print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])  # Will print as None or masked
+
+mail = Mail(app)
 
 bcrypt = Bcrypt(app)
+
+def generate_reset_token(email):
+    s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    return s.dumps(email, salt='password-reset-salt')
+
+def verify_reset_token(token, max_age=3600):  # 1 hour expiry
+    s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+    try:
+        return s.loads(token, salt='password-reset-salt', max_age=max_age)
+    except Exception:
+        return None
 
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect("db.sqlite3")
         g.db.row_factory = sqlite3.Row
     return g.db
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("is_admin"):
+            flash("Admin access required.")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route("/admin")
+@admin_required
+def admin_panel():
+    ...
 
 @app.teardown_appcontext
 def close_db(error):
@@ -38,11 +78,13 @@ def register():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
+        email = request.form["email"]
         hashed = bcrypt.generate_password_hash(password).decode("utf-8")
 
         db = get_db()
         try:
-            db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed))
+            db.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)", 
+                    (username, hashed, email))
             db.commit()
             flash("Registration successful. Please log in.")
             return redirect(url_for("login"))
@@ -74,6 +116,45 @@ def login():
             flash("Invalid credentials.")
     return render_template("login.html")
 
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form['email']
+        db = get_db()
+        user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if user:
+            token = generate_reset_token(email)
+            link = url_for('reset_password', token=token, _external=True)
+            msg = Message("Password Reset Request", recipients=[email])
+            msg.body = f"Click the link to reset your password:\n{link}\nThis link expires in 1 hour."
+            mail.send(msg)
+            flash("Password reset link sent to your email.", "info")
+        else:
+            flash("Email not found.", "danger")
+    
+    return render_template("forgot_password.html")
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    email = verify_reset_token(token)
+    if not email:
+        flash('Reset link is invalid or expired.', 'danger')
+        return redirect(url_for('forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form['password']
+        hashed = bcrypt.generate_password_hash(new_password).decode('utf-8')
+
+        db = get_db()
+
+        db.execute("UPDATE users SET password = ? WHERE email = ?", (hashed, email))
+        db.commit()
+        flash('Your password has been updated!', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', token=token)
+
+# Receives token from URL
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
@@ -96,25 +177,61 @@ def dashboard():
     if end_date:
         query += " AND timestamp <= ?"
         params.append(end_date + " 23:59:59")
-    if tx_type and tx_type != "all":
+    if tx_type and tx_type != "all" and tx_type != "":
         query += " AND type = ?"
         params.append(tx_type)
 
     query += " ORDER BY timestamp ASC"
     rows = db.execute(query, params).fetchall()
 
-    # Prepare chart data
+    # Prepare chart data by type
     labels = []
-    balances = []
-    current_balance = 0
+    types = ["deposit", "withdraw", "transfer_in", "transfer_out"]
+    type_data = {t: [] for t in types}
+    timestamps_seen = set()
 
+    # Collect unique timestamps (minute precision)
     for row in rows:
-        if row["type"] == "deposit" or row["type"] == "transfer_in":
-            current_balance += row["amount"]
-        elif row["type"] == "withdraw" or row["type"] == "transfer_out":
-            current_balance -= row["amount"]
-        labels.append(row["timestamp"][:16])
-        balances.append(current_balance)
+        ts = row["timestamp"][:16]  # "YYYY-MM-DD HH:MM"
+        if ts not in timestamps_seen:
+            labels.append(ts)
+            timestamps_seen.add(ts)
+
+    # Initialize zeros for each type per timestamp
+    for t in types:
+        type_data[t] = [0] * len(labels)
+
+    # Fill type_data arrays
+    for row in rows:
+        ts = row["timestamp"][:16]
+        idx = labels.index(ts)
+        tx_t = row["type"]
+        if tx_t in types:
+            type_data[tx_t][idx] += float(row["amount"] or 0)
+
+    # Calculate totals
+    totals = {t: 0 for t in types}
+    for row in rows:
+        tx_t = row["type"]
+        if tx_t in types:
+            totals[tx_t] += float(row["amount"] or 0)
+
+    # Calculate net total over time for the second chart
+    net_data = []
+    net_labels = []
+    running_total = 0
+
+    # Use rows ordered by timestamp, update running total per transaction
+    for row in rows:
+        amt = float(row["amount"] or 0)
+        tx_t = row["type"]
+        if tx_t in ["deposit", "transfer_in"]:
+            running_total += amt
+        elif tx_t in ["withdraw", "transfer_out"]:
+            running_total -= amt
+        # Append timestamp and running total after each transaction
+        net_labels.append(row["timestamp"][:16])
+        net_data.append(round(running_total, 2))
 
     # Fetch user info
     user = db.execute("SELECT username, balance FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -122,12 +239,17 @@ def dashboard():
     # Notifications
     notifications = db.execute("SELECT * FROM notifications WHERE user_id = ? ORDER BY timestamp DESC", (user_id,)).fetchall()
 
-    return render_template("dashboard.html",
-                           username=user["username"],
-                           balance=user["balance"],
-                           labels=labels,
-                           balances=balances,
-                           notifications=notifications)
+    return render_template(
+        "dashboard.html",
+        username=user["username"],
+        balance=user["balance"],
+        labels=labels,
+        type_data=type_data,
+        totals=totals,
+        notifications=notifications,
+        net_data=net_data,
+        net_labels=net_labels
+    )
 
 @app.route("/transaction", methods=["POST"])
 def transaction():
@@ -329,7 +451,13 @@ def export_csv():
                      download_name="transactions.csv",
                      mimetype="text/csv")
 
+@app.route('/test-email')
+def test_email():
+    from flask_mail import Message
+    msg = Message("Test Email", recipients=["bonecrusty@gmail.com"])
+    msg.body = "This is a test to check Gmail SMTP settings."
+    mail.send(msg)
+    return "Email sent!"
+
 if __name__ == "__main__":
     app.run(debug=True)
-
-

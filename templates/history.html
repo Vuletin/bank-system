@@ -19,6 +19,8 @@
       <option value="">All</option>
       <option value="deposit" {% if request.args.get('type') == 'deposit' %}selected{% endif %}>Deposit</option>
       <option value="withdraw" {% if request.args.get('type') == 'withdraw' %}selected{% endif %}>Withdraw</option>
+      <option value="transfer_in" {% if request.args.get('type') == 'transfer_in' %}selected{% endif %}>transfer_in</option>
+      <option value="transfer_out" {% if request.args.get('type') == 'transfer_out' %}selected{% endif %}>transfer_out</option>
     </select>
   </div>
   <div class="col-md-3 d-flex align-items-end">
