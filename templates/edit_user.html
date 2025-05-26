@@ -1,0 +1,7 @@
+<h1>Edit User {{ user.username }}</h1>
+<form method="POST">
+    Username: <input name="username" value="{{ user.username }}"><br>
+    Email: <input name="email" value="{{ user.email }}"><br>
+    Balance: <input name="balance" value="{{ user.balance }}"><br>
+    <button type="submit">Update</button>
+</form>

@@ -14,6 +14,9 @@
   <a class="navbar-brand" href="/">BankApp</a>
   <div class="collapse navbar-collapse">
     <ul class="navbar-nav ml-auto">
+      {% if session.get("is_admin") %}
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_panel') }}">Admin Panel</a></li>
+      {% endif %}
       {% if session.get("user_id") %}
         <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('history') }}">History</a></li>

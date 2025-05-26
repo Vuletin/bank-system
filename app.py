@@ -57,6 +57,33 @@ def admin_panel():
     users = db.execute("SELECT id, username, email, balance FROM users").fetchall()
     return render_template("admin.html", users=users)
 
+@app.route("/admin/delete/<int:user_id>", methods=["POST"])
+@admin_required
+def delete_user(user_id):
+    db = get_db()
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    flash(f"User {user_id} deleted.")
+    return redirect(url_for("admin_panel"))
+
+@app.route("/admin/edit/<int:user_id>", methods=["GET", "POST"])
+@admin_required
+def edit_user(user_id):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    if request.method == "POST":
+        username = request.form["username"]
+        email = request.form["email"]
+        balance = request.form["balance"]
+        db.execute("UPDATE users SET username = ?, email = ?, balance = ? WHERE id = ?",
+                   (username, email, balance, user_id))
+        db.commit()
+        flash("User updated.")
+        return redirect(url_for("admin_panel"))
+
+    return render_template("edit_user.html", user=user)
+
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect("db.sqlite3")
