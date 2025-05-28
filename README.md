@@ -2,10 +2,11 @@
 
 A full-featured automated bank system written in Python using the Flask web framework. This project was developed as the final assignment for CS50, demonstrating understanding of backend web development, frontend templating, databases, user authentication, and secure financial logic. It simulates the core functionality of a basic online banking platform and includes an admin panel for user management and system maintenance.
 
-🎥 Video Demo
+##🎥 Video Demo
 
 
-🧠 Project Overview
+##🧠 Project Overview
+
 This system allows users to register securely, manage their bank account, view their transaction history, and perform actions such as deposits, withdrawals, and transfers to other users. The app includes built-in error handling, input validation, and user-friendly feedback for a seamless experience.
 
 Users can also view statistics about their finances through a graphical dashboard, with support for filtering by transaction type or date. Transaction history can be exported in CSV format, and charts (e.g. bar graphs or line graphs) can be exported as images for personal records.
@@ -45,6 +46,7 @@ requirements.txt	Lists all necessary Python packages. Used for pip install -r re
 README.md	This file. Describes the project, functionality, and usage.
 
 ## ⚙️ Setup Instructions⚙️ Setup Instructions
+
 Clone the repository:
 
 1. Clone the repository:
@@ -64,7 +66,8 @@ Run the app:
 flask run
 Open http://127.0.0.1:5000 in your browser.
 
-🔧 Design Decisions
+##🔧 Design Decisions
+
 Several key design decisions were made during development:
 
 Transactions are split into types: Instead of one generic transaction type, the database distinguishes between deposit, withdraw, transfer_in, and transfer_out. This makes querying, filtering, and charting simpler and more accurate.
@@ -79,7 +82,8 @@ Admin-only actions are protected via decorators and role checks: Ensuring that o
 
 Clean session handling: Session data is minimal and server-side checks are performed to prevent session hijacking or privilege escalation.
 
-🔮 Future Improvements
+##🔮 Future Improvements
+
 This app is built to be modular and extensible. Planned features include:
 
 Budget planning tools for users to manage spending and savings goals.
@@ -94,7 +98,8 @@ Real-time notifications via websockets or email.
 
 Mobile-friendly responsive layout.
 
-✅ Summary
+##✅ Summary
+
 This project showcases full-stack web development with a focus on secure financial operations, clean UI, and practical data management. It includes most features you'd expect from an entry-level online banking interface and can be extended into a full SaaS-style platform. Whether you're checking your balance or auditing a year’s worth of transactions, this system handles it all with clarity and control.
 
 I developed this as a way to challenge myself with realistic functionality and system design, and I’m proud of how far it has come.
