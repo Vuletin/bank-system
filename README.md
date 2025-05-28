@@ -4,16 +4,18 @@ A full-featured automated bank system written in Python using Flask.
 
 ## 🚀 Features
 
+## 🚀 Features
+
 - User authentication (register, login, logout, email verification, password reset)
-- View account balance and transaction history (filter by transaction type export to CSV)
+- View account balance and transaction history (filter by type, export to CSV)
 - Notifications system
-- Deposit and withdraw money (insufficient funds checks)
-- Transfer money between users
-- Graphs (Filtered, and Net Total + Export an image with Png Chart)
-- Admin panel (ban user, edit user, delete, reset balance, sync balance)
+- Deposit and withdraw money (with insufficient funds check, comment)
+- Transfer money between users (with optional comment)
+- Graphs (filtered, net totals, export as PNG+CSV)
+- Admin panel (ban, edit, delete users; reset/sync balance)
 - Secure password hashing
 - SQLite database
-- Future: Budget planner, Docker, OAuth2 login, Multi-currency support, Scalable DB and infra (e.g., AWS, Kubernetes)
+- **Planned:** Budget planner, Docker, OAuth2 login, multi-currency support, scalable infrastructure (AWS/Kubernetes)
 
 ## 📂 Tech Stack
 
