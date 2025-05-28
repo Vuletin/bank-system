@@ -1,7 +1,19 @@
-<h1>Edit User {{ user.username }}</h1>
+{% extends "layout.html" %}
+
+{% block content %}
+<h2>Edit User</h2>
 <form method="POST">
-    Username: <input name="username" value="{{ user.username }}"><br>
-    Email: <input name="email" value="{{ user.email }}"><br>
-    Balance: <input name="balance" value="{{ user.balance }}"><br>
-    <button type="submit">Update</button>
+    <div class="form-group">
+        <label>Username:</label>
+        <input type="text" name="username" value="{{ user.username }}" class="form-control">
+    </div>
+    <div class="form-group">
+        <label>Email:</label>
+        <input type="email" name="email" value="{{ user.email }}" class="form-control">
+    </div>
+
+    <div class="text-center mt-3">
+        <button type="submit" class="btn btn-primary">Update</button>
+    </div>
 </form>
+{% endblock %}

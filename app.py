@@ -54,12 +54,16 @@ def admin_required(f):
 @admin_required
 def admin_panel():
     db = get_db()
-    users = db.execute("SELECT id, username, email, balance FROM users").fetchall()
+    users = db.execute("SELECT id, username, email, balance, is_banned FROM users").fetchall()
     return render_template("admin.html", users=users)
 
 @app.route("/admin/delete/<int:user_id>", methods=["POST"])
 @admin_required
 def delete_user(user_id):
+    if session["user_id"] == user_id:
+        flash("You can't delete yourself.")
+        return redirect(url_for("admin_panel"))
+
     db = get_db()
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
@@ -75,14 +79,77 @@ def edit_user(user_id):
     if request.method == "POST":
         username = request.form["username"]
         email = request.form["email"]
-        balance = request.form["balance"]
-        db.execute("UPDATE users SET username = ?, email = ?, balance = ? WHERE id = ?",
-                   (username, email, balance, user_id))
+
+        db.execute("UPDATE users SET username = ?, email = ? WHERE id = ?",
+                   (username, email, user_id))
+
         db.commit()
         flash("User updated.")
         return redirect(url_for("admin_panel"))
 
     return render_template("edit_user.html", user=user)
+
+@app.route("/ban_user/<int:user_id>", methods=["POST"])
+@admin_required
+def ban_user(user_id):
+    if session["user_id"] == user_id:
+        flash("You can't ban yourself.")
+        return redirect(url_for("admin_panel"))
+
+    db = get_db()
+    user = db.execute("SELECT is_banned FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    if user is not None:
+        new_status = 0 if user["is_banned"] else 1
+        db.execute("UPDATE users SET is_banned = ? WHERE id = ?", (new_status, user_id))
+        db.commit()
+
+    return redirect(url_for("admin_panel"))
+
+@app.route("/toggle_admin/<int:user_id>", methods=["POST"])
+@admin_required
+def toggle_admin(user_id):
+    db = get_db()
+    user = db.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    if user:
+        new_status = 0 if user["is_admin"] else 1
+        db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (new_status, user_id))
+        db.commit()
+        flash("Admin privileges updated.")
+    return redirect(url_for("admin_panel"))
+
+@app.route("/admin/reset_balance", methods=["POST"])
+def admin_reset_balance():
+    if "user_id" not in session or session["user_id"] != 1:
+        flash("Unauthorized.")
+        return redirect(url_for("dashboard"))
+
+    user_id = int(request.form["user_id"])
+    new_balance = float(request.form["amount"])
+
+    db = get_db()
+    user = db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    if not user:
+        flash("User not found.")
+        return redirect(url_for("dashboard"))
+
+    old_balance = float(user["balance"])
+    delta = round(new_balance - old_balance, 2)
+
+    db.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+
+    if delta != 0:
+        tx_type = "deposit" if delta > 0 else "withdraw"
+        db.execute("""
+            INSERT INTO transactions (user_id, type, amount, note, timestamp)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (user_id, tx_type, abs(delta), "Admin reset"))
+
+    db.commit()
+    flash(f"Balance for user #{user_id} reset to ${new_balance:.2f}")
+    return redirect(url_for("dashboard"))
 
 def get_db():
     if 'db' not in g:
@@ -127,6 +194,22 @@ def logout():
     flash("You have been logged out.")
     return redirect(url_for("login"))
 
+def recreate_admin():
+    db = get_db()
+    password = "sava"  # Or whatever password you want
+    hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    db.execute(
+        "INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
+        ("admin", hashed_pw, 1),
+    )
+    db.commit()
+    print("✅ Admin user recreated with username: admin and password: admin123")
+
+@app.route("/whoami")
+def whoami():
+    return f"Logged in as {session.get('username')} | Admin: {session.get('is_admin')}"
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -136,15 +219,23 @@ def login():
         db = get_db()
         user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
-        if user and bcrypt.check_password_hash(user["password"], password):
-            session["user_id"] = user["id"]
-            session["username"] = user["username"]
-            session["is_admin"] = user["is_admin"]  # ✅ Only if login is successful
-            flash("Logged in successfully.")
-            return redirect(url_for("dashboard"))
+        if user:
+            if user["is_banned"]:
+                flash("Account banned.")
+                return redirect(url_for("login"))
+
+            if bcrypt.check_password_hash(user["password"], password):
+                session["user_id"] = user["id"]
+                session["username"] = user["username"]
+                session["is_admin"] = user["is_admin"]
+                flash("Logged in successfully.")
+                return redirect(url_for("dashboard"))
+            else:
+                flash("Invalid password.")
         else:
-            flash("Invalid credentials.")
-            return redirect(url_for("login"))  # prevent falling through
+            flash("User not found.")
+
+        return redirect(url_for("login"))
 
     return render_template("login.html")
 
@@ -268,9 +359,19 @@ def dashboard():
     # Fetch user info
     user = db.execute("SELECT username, balance FROM users WHERE id = ?", (user_id,)).fetchone()
 
-    # Notifications
-    notifications = db.execute("SELECT * FROM notifications WHERE user_id = ? ORDER BY timestamp DESC", (user_id,)).fetchall()
+    notifications = db.execute("""
+        SELECT * FROM notifications
+        WHERE user_id = ?
+        ORDER BY timestamp DESC
+        LIMIT 5
+    """, (user_id,)).fetchall()
 
+    # If user is None
+    if user is None:
+        flash("User not found. Please log in again.")
+        session.clear()
+        return redirect(url_for("login"))
+    
     return render_template(
         "dashboard.html",
         username=user["username"],
@@ -349,6 +450,10 @@ def transfer():
         return redirect(url_for("dashboard"))
 
     recipient_id = recipient["id"]
+
+    if recipient_id == sender_id:
+        flash("You can't transfer money to yourself.")
+        return redirect(url_for("dashboard"))
 
     # Get sender balance
     sender = db.execute("SELECT balance FROM users WHERE id = ?", (sender_id,)).fetchone()
@@ -483,13 +588,53 @@ def export_csv():
                      download_name="transactions.csv",
                      mimetype="text/csv")
 
-@app.route('/test-email')
-def test_email():
-    from flask_mail import Message
-    msg = Message("Test Email", recipients=["bonecrusty@gmail.com"])
-    msg.body = "This is a test to check Gmail SMTP settings."
-    mail.send(msg)
-    return "Email sent!"
+def sync_user_balance(user_id):
+    db = get_db()
+    user = db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        return
+
+    recorded_balance = float(user["balance"])
+    rows = db.execute("SELECT type, amount FROM transactions WHERE user_id = ?", (user_id,)).fetchall()
+
+    # Recalculate actual balance from history
+    calculated_balance = 0
+    for row in rows:
+        amt = float(row["amount"] or 0)
+        if row["type"] in ["deposit", "transfer_in"]:
+            calculated_balance += amt
+        elif row["type"] in ["withdraw", "transfer_out"]:
+            calculated_balance -= amt
+
+    # Check for mismatch
+    diff = round(recorded_balance - calculated_balance, 2)
+    if diff != 0:
+        tx_type = "deposit" if diff > 0 else "withdraw"
+        db.execute("""
+            INSERT INTO transactions (user_id, type, amount, note, timestamp)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (user_id, tx_type, abs(diff), "Balance sync correction"))
+        db.commit()
+
+@app.route("/admin/wipe_user/<int:user_id>", methods=["POST"])
+@admin_required
+def wipe_user(user_id):
+    db = get_db()
+    db.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+    db.execute("UPDATE users SET balance = 0 WHERE id = ?", (user_id,))
+    db.commit()
+    flash(f"All history wiped and balance reset for user #{user_id}")
+    return redirect(url_for("admin"))
+
+@app.route("/admin/sync_balances")
+@admin_required
+def sync_balances():
+    db = get_db()
+    users = db.execute("SELECT id FROM users").fetchall()
+    for user in users:
+        sync_user_balance(user["id"])
+    flash("All user balances have been synchronized based on transactions.")
+    return redirect(url_for("admin_panel"))
 
 if __name__ == "__main__":
     app.run(debug=True)
