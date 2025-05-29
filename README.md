@@ -3,7 +3,7 @@
 A full-featured automated bank system written in Python using the Flask web framework. This project was developed as the final assignment for CS50, demonstrating understanding of backend web development, frontend templating, databases, user authentication, and secure financial logic. It simulates the core functionality of a basic online banking platform and includes an admin panel for user management and system maintenance.
 
 ##🎥 Video Demo
-submit50 cs50/problems/2025/x/project
+[submit50 cs50/problems/2025/x/project](https://youtu.be/uvWxghlOhAs)
 
 ##🧠 Project Overview
 
