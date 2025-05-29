@@ -66,6 +66,8 @@ Run the app:
 flask run
 Open http://127.0.0.1:5000 in your browser.
 
+5. Before first run, create db.sqlite3 using schema.sql or allow the app to create it automatically.
+
 ##🔧 Design Decisions
 
 Several key design decisions were made during development:
