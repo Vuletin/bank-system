@@ -636,5 +636,9 @@ def sync_balances():
     flash("All user balances have been synchronized based on transactions.")
     return redirect(url_for("admin_panel"))
 
+@app.route("/healthz")
+def health_check():
+    return "OK"
+
 if __name__ == "__main__":
     app.run(debug=True)
