@@ -7,6 +7,8 @@ from datetime import datetime
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
 from functools import wraps
+from io import StringIO
+import logging
 import sqlite3
 import os
 import csv
@@ -15,6 +17,8 @@ app = Flask(__name__)
 
 load_dotenv()
 
+app.config['DEBUG'] = True
+app.config['PROPAGATE_EXCEPTIONS'] = True
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT'))
@@ -29,6 +33,8 @@ print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])  # Will print as None or ma
 mail = Mail(app)
 
 bcrypt = Bcrypt(app)
+
+logging.basicConfig(level=logging.DEBUG)
 
 def generate_reset_token(email):
     s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
@@ -212,32 +218,37 @@ def whoami():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
+    try:
+        if request.method == "POST":
+            username = request.form["username"]
+            password = request.form["password"]
 
-        db = get_db()
-        user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            db = get_db()
+            user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
-        if user:
-            if user["is_banned"]:
-                flash("Account banned.")
-                return redirect(url_for("login"))
+            if user:
+                if user["is_banned"]:
+                    flash("Account banned.")
+                    return redirect(url_for("login"))
 
-            if bcrypt.check_password_hash(user["password"], password):
-                session["user_id"] = user["id"]
-                session["username"] = user["username"]
-                session["is_admin"] = user["is_admin"]
-                flash("Logged in successfully.")
-                return redirect(url_for("dashboard"))
+                if bcrypt.check_password_hash(user["password"], password):
+                    session["user_id"] = user["id"]
+                    session["username"] = user["username"]
+                    session["is_admin"] = user["is_admin"]
+                    flash("Logged in successfully.")
+                    return redirect(url_for("dashboard"))
+                else:
+                    flash("Invalid password.")
             else:
-                flash("Invalid password.")
-        else:
-            flash("User not found.")
+                flash("User not found.")
 
-        return redirect(url_for("login"))
+            return redirect(url_for("login"))
 
-    return render_template("login.html")
+        return render_template("login.html")
+    
+    except Exception as e:
+        print("Login Error:", e)
+        return "Internal Server Error", 500
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
@@ -566,7 +577,6 @@ def export_csv():
     transactions = db.execute(query, params).fetchall()
 
     # Write to a text stream first
-    from io import StringIO
     string_io = StringIO()
     writer = csv.writer(string_io)
     writer.writerow(["Type", "Amount", "Timestamp", "Note"])
@@ -639,8 +649,6 @@ def sync_balances():
 @app.route("/healthz")
 def health_check():
     return "OK"
-
-
 
 if __name__ == "__main__":
     app.run(debug=True)
