@@ -56,6 +56,13 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def initialize_db():
+    with sqlite3.connect("db.sqlite3") as conn:
+        conn.executescript(open("schema.sql").read())
+        print("✅ Database initialized.")
+if not os.path.exists("db.sqlite3"):
+    initialize_db()
+
 @app.route("/admin")
 @admin_required
 def admin_panel():
@@ -395,7 +402,7 @@ def dashboard():
         net_labels=net_labels
     )
 
-@app.route("/transaction", methods=["POST"])
+@app.route("/traFnsaction", methods=["POST"])
 def transaction():
     if "user_id" not in session:
         return redirect(url_for("login"))
