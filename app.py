@@ -91,7 +91,7 @@ def edit_user(user_id):
 
     if request.method == "POST":
         username = request.form["username"]
-        email = request.form["email"]
+        email = request.form.get("email")
 
         db.execute("UPDATE users SET username = ?, email = ? WHERE id = ?",
                    (username, email, user_id))
@@ -186,7 +186,7 @@ def home():
 def register():
     if request.method == "POST":
         username = request.form["username"]
-        password = request.form["password"]
+        password = request.form.get("password")
         email = request.form["email"]
         hashed = bcrypt.generate_password_hash(password).decode("utf-8")
 
@@ -302,7 +302,7 @@ def dashboard():
         return redirect(url_for("login"))
 
     db = get_db()
-    user_id = session["user_id"]
+    user_id = session.get("user_id")
 
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
@@ -561,7 +561,7 @@ def export_csv():
         return redirect(url_for("login"))
 
     db = get_db()
-    user_id = session["user_id"]
+    user_id = session.get("user_id")
 
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
