@@ -234,14 +234,14 @@ def login():
             user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
             if user:
-                if user.get("is_banned"):
+                if user("is_banned"):
                     flash("Account banned.")
                     return redirect(url_for("login"))
 
                 if bcrypt.check_password_hash(user["password"], password):
                     session["user_id"] = user["id"]
                     session["username"] = user["username"]
-                    session["is_admin"] = user.get("is_admin", False)
+                    session["is_admin"] = user("is_admin", False)
                     flash("Logged in successfully.")
                     return redirect(url_for("dashboard"))
                 else:
@@ -606,6 +606,12 @@ def export_csv():
                      as_attachment=True,
                      download_name="transactions.csv",
                      mimetype="text/csv")
+
+@app.route("/debug-users")
+def debug_users():
+    db = get_db()
+    users = db.execute("SELECT id, username, email, is_admin FROM users").fetchall()
+    return "<br>".join([f"{u['id']}: {u['username']} | {u['email']} | Admin: {u['is_admin']}" for u in users])
 
 def sync_user_balance(user_id):
     db = get_db()
