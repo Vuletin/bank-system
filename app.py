@@ -227,32 +227,34 @@ def whoami():
 def login():
     try:
         if request.method == "POST":
-            username = request.form["username"]
-            password = request.form["password"]
+            username = request.form.get("username")
+            password = request.form.get("password")
 
             db = get_db()
             user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
             if user:
-                if user["is_banned"]:
+                if user.get("is_banned"):
                     flash("Account banned.")
                     return redirect(url_for("login"))
 
                 if bcrypt.check_password_hash(user["password"], password):
                     session["user_id"] = user["id"]
                     session["username"] = user["username"]
-                    session["is_admin"] = user["is_admin"]
+                    session["is_admin"] = user.get("is_admin", False)
                     flash("Logged in successfully.")
                     return redirect(url_for("dashboard"))
                 else:
+                    print("⚠️ Password mismatch for user:", user["username"])
                     flash("Invalid password.")
             else:
+                print("⚠️ User not found for username:", username)
                 flash("User not found.")
 
             return redirect(url_for("login"))
 
         return render_template("login.html")
-    
+
     except Exception as e:
         print("Login Error:", e)
         return "Internal Server Error", 500
@@ -389,7 +391,7 @@ def dashboard():
         flash("User not found. Please log in again.")
         session.clear()
         return redirect(url_for("login"))
-    
+
     return render_template(
         "dashboard.html",
         username=user["username"],
