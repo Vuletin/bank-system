@@ -56,12 +56,20 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def initialize_db():
-    with sqlite3.connect("db.sqlite3") as conn:
-        conn.executescript(open("schema.sql").read())
-        print("✅ Database initialized.")
-if not os.path.exists("db.sqlite3"):
-    initialize_db()
+def init_db():
+    if not os.path.exists("db.sqlite3"):
+        with sqlite3.connect("db.sqlite3") as db:
+            with open("schema.sql", "r") as f:
+                db.executescript(f.read())
+        print("✅ db.sqlite3 created from schema.sql")
+
+init_db()
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect("db.sqlite3")
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
 @app.route("/admin")
 @admin_required
@@ -164,12 +172,6 @@ def admin_reset_balance():
     flash(f"Balance for user #{user_id} reset to ${new_balance:.2f}")
     return redirect(url_for("dashboard"))
 
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect("db.sqlite3")
-        g.db.row_factory = sqlite3.Row
-    return g.db
-
 @app.teardown_appcontext
 def close_db(error):
     db = g.pop('db', None)
@@ -234,14 +236,14 @@ def login():
             user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
             if user:
-                if user("is_banned"):
+                if user["is_banned"]:
                     flash("Account banned.")
                     return redirect(url_for("login"))
 
                 if bcrypt.check_password_hash(user["password"], password):
                     session["user_id"] = user["id"]
                     session["username"] = user["username"]
-                    session["is_admin"] = user("is_admin", False)
+                    session["is_admin"] = user["is_admin"]
                     flash("Logged in successfully.")
                     return redirect(url_for("dashboard"))
                 else:
