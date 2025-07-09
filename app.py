@@ -1,5 +1,6 @@
 from sqlite3.dbapi2 import Timestamp
 from flask import Flask, render_template, request, redirect, session, url_for, flash, g, send_file
+from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from io import StringIO, BytesIO
@@ -8,6 +9,11 @@ from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
 from functools import wraps
 from io import StringIO
+from models import db
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+db.init_app(app)
+with app.app_context(): 
+    db.create_all()
 import logging
 import sqlite3
 import os
@@ -64,6 +70,16 @@ def init_db():
         print("✅ db.sqlite3 created from schema.sql")
 
 init_db()
+
+db = SQLAlchemy()
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String, nullable=False, unique=True)
+    email = db.Column(db.String, nullable=False, unique=True)
+    password = db.Column(db.String, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    is_banned = db.Column(db.Boolean, default=False)
 
 def get_db():
     if 'db' not in g:
