@@ -375,6 +375,7 @@ def dashboard():
         net_data=net_data,
         net_labels=net_labels
     )
+
 @app.route("/transaction", methods=["POST"])
 def transaction():
     if "user_id" not in session:
