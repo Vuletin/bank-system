@@ -645,6 +645,12 @@ def create_admin():
         return "✅ Admin user created successfully!"
     except Exception as e:
         return f"❌ Error: {e}"
+    
+@app.route("/debug-users")
+def debug_users():
+    from models import User
+    users = User.query.all()
+    return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
 
 if __name__ == "__main__":
     app.run(debug=True)
