@@ -1,28 +1,21 @@
-from sqlite3.dbapi2 import Timestamp
-from flask import Flask, render_template, request, redirect, session, url_for, flash, g, send_file
+from flask import Flask, render_template, request, redirect, session, url_for, flash, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
-from dotenv import load_dotenv
-from io import StringIO, BytesIO
-from datetime import datetime
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
+from dotenv import load_dotenv
 from functools import wraps
-from io import StringIO
-from models import db
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-db.init_app(app)
-with app.app_context(): 
-    db.create_all()
-import logging
-import sqlite3
+from datetime import datetime
 import os
 import csv
-
-app = Flask(__name__)
+import logging
+from models import db, User, Transaction, Notification, Note
 
 load_dotenv()
 
+app = Flask(__name__)
+
+# Configuration
 app.config['DEBUG'] = True
 app.config['PROPAGATE_EXCEPTIONS'] = True
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
@@ -32,21 +25,29 @@ app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS') == 'True'
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-print("MAIL_USERNAME:", app.config['MAIL_USERNAME'])
-print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])  # Will print as None or masked
-
-mail = Mail(app)
-
-bcrypt = Bcrypt(app)
-
+# Logging
 logging.basicConfig(level=logging.DEBUG)
+print("MAIL_USERNAME:", app.config['MAIL_USERNAME'])
+print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])
 
+# Extensions
+bcrypt = Bcrypt(app)
+mail = Mail(app)
+db.init_app(app)
+
+# Create tables
+with app.app_context():
+    db.create_all()
+
+# Utilities
 def generate_reset_token(email):
     s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
     return s.dumps(email, salt='password-reset-salt')
 
-def verify_reset_token(token, max_age=3600):  # 1 hour expiry
+def verify_reset_token(token, max_age=3600):
     s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
     try:
         return s.loads(token, salt='password-reset-salt', max_age=max_age)
@@ -62,36 +63,11 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def init_db():
-    if not os.path.exists("db.sqlite3"):
-        with sqlite3.connect("db.sqlite3") as db:
-            with open("schema.sql", "r") as f:
-                db.executescript(f.read())
-        print("✅ db.sqlite3 created from schema.sql")
-
-init_db()
-
-db = SQLAlchemy()
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, nullable=False, unique=True)
-    email = db.Column(db.String, nullable=False, unique=True)
-    password = db.Column(db.String, nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    is_banned = db.Column(db.Boolean, default=False)
-
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect("db.sqlite3")
-        g.db.row_factory = sqlite3.Row
-    return g.db
-
+# Admin Routes
 @app.route("/admin")
 @admin_required
 def admin_panel():
-    db = get_db()
-    users = db.execute("SELECT id, username, email, balance, is_banned FROM users").fetchall()
+    users = User.query.with_entities(User.id, User.username, User.email, User.is_banned).all()
     return render_template("admin.html", users=users)
 
 @app.route("/admin/delete/<int:user_id>", methods=["POST"])
@@ -101,31 +77,35 @@ def delete_user(user_id):
         flash("You can't delete yourself.")
         return redirect(url_for("admin_panel"))
 
-    db = get_db()
-    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    db.commit()
-    flash(f"User {user_id} deleted.")
+    user = User.query.get(user_id)
+    if user:
+        db.session.delete(user)
+        db.session.commit()
+        flash(f"User {user_id} deleted.")
+    else:
+        flash("User not found.")
+
     return redirect(url_for("admin_panel"))
 
 @app.route("/admin/edit/<int:user_id>", methods=["GET", "POST"])
 @admin_required
 def edit_user(user_id):
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = User.query.get(user_id)
+
+    if not user:
+        flash("User not found.")
+        return redirect(url_for("admin_panel"))
 
     if request.method == "POST":
         username = request.form["username"]
         email = request.form.get("email")
-
-        db.execute("UPDATE users SET username = ?, email = ? WHERE id = ?",
-                   (username, email, user_id))
-
-        db.commit()
+        user.username = username
+        user.email = email
+        db.session.commit()
         flash("User updated.")
         return redirect(url_for("admin_panel"))
 
     return render_template("edit_user.html", user=user)
-
 @app.route("/ban_user/<int:user_id>", methods=["POST"])
 @admin_required
 def ban_user(user_id):
@@ -133,27 +113,26 @@ def ban_user(user_id):
         flash("You can't ban yourself.")
         return redirect(url_for("admin_panel"))
 
-    db = get_db()
-    user = db.execute("SELECT is_banned FROM users WHERE id = ?", (user_id,)).fetchone()
-
-    if user is not None:
-        new_status = 0 if user["is_banned"] else 1
-        db.execute("UPDATE users SET is_banned = ? WHERE id = ?", (new_status, user_id))
-        db.commit()
+    user = User.query.get(user_id)
+    if user:
+        user.is_banned = not user.is_banned
+        db.session.commit()
+        flash("User ban status updated.")
+    else:
+        flash("User not found.")
 
     return redirect(url_for("admin_panel"))
 
 @app.route("/toggle_admin/<int:user_id>", methods=["POST"])
 @admin_required
 def toggle_admin(user_id):
-    db = get_db()
-    user = db.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
-
+    user = User.query.get(user_id)
     if user:
-        new_status = 0 if user["is_admin"] else 1
-        db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (new_status, user_id))
-        db.commit()
+        user.is_admin = not user.is_admin
+        db.session.commit()
         flash("Admin privileges updated.")
+    else:
+        flash("User not found.")
     return redirect(url_for("admin_panel"))
 
 @app.route("/admin/reset_balance", methods=["POST"])
@@ -165,34 +144,29 @@ def admin_reset_balance():
     user_id = int(request.form["user_id"])
     new_balance = float(request.form["amount"])
 
-    db = get_db()
-    user = db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)).fetchone()
-
+    user = User.query.get(user_id)
     if not user:
         flash("User not found.")
         return redirect(url_for("dashboard"))
 
-    old_balance = float(user["balance"])
+    old_balance = getattr(user, "balance", 0.0)
     delta = round(new_balance - old_balance, 2)
-
-    db.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user_id))
+    user.balance = new_balance
 
     if delta != 0:
         tx_type = "deposit" if delta > 0 else "withdraw"
-        db.execute("""
-            INSERT INTO transactions (user_id, type, amount, note, timestamp)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """, (user_id, tx_type, abs(delta), "Admin reset"))
+        transaction = Transaction(
+            user_id=user_id,
+            type=tx_type,
+            amount=abs(delta),
+            note="Admin reset",
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(transaction)
 
-    db.commit()
+    db.session.commit()
     flash(f"Balance for user #{user_id} reset to ${new_balance:.2f}")
     return redirect(url_for("dashboard"))
-
-@app.teardown_appcontext
-def close_db(error):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
 
 @app.route("/")
 def home():
@@ -208,38 +182,39 @@ def register():
         email = request.form["email"]
         hashed = bcrypt.generate_password_hash(password).decode("utf-8")
 
-        db = get_db()
-        try:
-            db.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)", 
-                    (username, hashed, email))
-            db.commit()
-            flash("Registration successful. Please log in.")
-            return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
             flash("Username already exists.")
-    return render_template("register.html")
+            return render_template("register.html")
 
+        user = User(username=username, password=hashed, email=email)
+        db.session.add(user)
+        db.session.commit()
+        flash("Registration successful. Please log in.")
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
 @app.route("/logout")
 def logout():
     session.clear()
     flash("You have been logged out.")
     return redirect(url_for("login"))
 
+
 def recreate_admin():
-    db = get_db()
     password = "sava"  # Or whatever password you want
     hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
 
-    db.execute(
-        "INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
-        ("admin", hashed_pw, 1),
-    )
-    db.commit()
-    print("✅ Admin user recreated with username: admin and password: admin123")
+    new_admin = User(username="admin", password=hashed_pw, is_admin=True)
+    db.session.add(new_admin)
+    db.session.commit()
+    print("✅ Admin user recreated with username: admin and password: sava")
+
 
 @app.route("/whoami")
 def whoami():
     return f"Logged in as {session.get('username')} | Admin: {session.get('is_admin')}"
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -248,22 +223,21 @@ def login():
             username = request.form.get("username")
             password = request.form.get("password")
 
-            db = get_db()
-            user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            user = User.query.filter_by(username=username).first()
 
             if user:
-                if user["is_banned"]:
+                if user.is_banned:
                     flash("Account banned.")
                     return redirect(url_for("login"))
 
-                if bcrypt.check_password_hash(user["password"], password):
-                    session["user_id"] = user["id"]
-                    session["username"] = user["username"]
-                    session["is_admin"] = user["is_admin"]
+                if bcrypt.check_password_hash(user.password, password):
+                    session["user_id"] = user.id
+                    session["username"] = user.username
+                    session["is_admin"] = user.is_admin
                     flash("Logged in successfully.")
                     return redirect(url_for("dashboard"))
                 else:
-                    print("⚠️ Password mismatch for user:", user["username"])
+                    print("⚠️ Password mismatch for user:", user.username)
                     flash("Invalid password.")
             else:
                 print("⚠️ User not found for username:", username)
@@ -277,12 +251,12 @@ def login():
         print("Login Error:", e)
         return "Internal Server Error", 500
 
+
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
         email = request.form['email']
-        db = get_db()
-        user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        user = User.query.filter_by(email=email).first()
         if user:
             token = generate_reset_token(email)
             link = url_for('reset_password', token=token, _external=True)
@@ -292,8 +266,9 @@ def forgot_password():
             flash("Password reset link sent to your email.", "info")
         else:
             flash("Email not found.", "danger")
-    
+
     return render_template("forgot_password.html")
+
 
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
@@ -306,44 +281,37 @@ def reset_password(token):
         new_password = request.form['password']
         hashed = bcrypt.generate_password_hash(new_password).decode('utf-8')
 
-        db = get_db()
-
-        db.execute("UPDATE users SET password = ? WHERE email = ?", (hashed, email))
-        db.commit()
-        flash('Your password has been updated!', 'success')
-        return redirect(url_for('login'))
+        user = User.query.filter_by(email=email).first()
+        if user:
+            user.password = hashed
+            db.session.commit()
+            flash('Your password has been updated!', 'success')
+            return redirect(url_for('login'))
 
     return render_template('reset_password.html', token=token)
-
-# Receives token from URL
 @app.route("/dashboard")
 def dashboard():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    db = get_db()
     user_id = session.get("user_id")
 
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
     tx_type = request.args.get("type")  # Optional
 
-    # Build base query
-    query = "SELECT * FROM transactions WHERE user_id = ?"
-    params = [user_id]
+    # Build query dynamically
+    query = Transaction.query.filter_by(user_id=user_id)
 
     if start_date:
-        query += " AND timestamp >= ?"
-        params.append(start_date)
+        query = query.filter(Transaction.timestamp >= start_date)
     if end_date:
-        query += " AND timestamp <= ?"
-        params.append(end_date + " 23:59:59")
+        query = query.filter(Transaction.timestamp <= end_date + " 23:59:59")
     if tx_type and tx_type != "all" and tx_type != "":
-        query += " AND type = ?"
-        params.append(tx_type)
+        query = query.filter_by(type=tx_type)
 
-    query += " ORDER BY timestamp ASC"
-    rows = db.execute(query, params).fetchall()
+    query = query.order_by(Transaction.timestamp.asc())
+    rows = query.all()
 
     # Prepare chart data by type
     labels = []
@@ -351,69 +319,54 @@ def dashboard():
     type_data = {t: [] for t in types}
     timestamps_seen = set()
 
-    # Collect unique timestamps (minute precision)
     for row in rows:
-        ts = row["timestamp"][:16]  # "YYYY-MM-DD HH:MM"
+        ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
         if ts not in timestamps_seen:
             labels.append(ts)
             timestamps_seen.add(ts)
 
-    # Initialize zeros for each type per timestamp
     for t in types:
         type_data[t] = [0] * len(labels)
 
-    # Fill type_data arrays
     for row in rows:
-        ts = row["timestamp"][:16]
+        ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
         idx = labels.index(ts)
-        tx_t = row["type"]
-        if tx_t in types:
-            type_data[tx_t][idx] += float(row["amount"] or 0)
+        if row.type in types:
+            type_data[row.type][idx] += float(row.amount or 0)
 
-    # Calculate totals
+    # Totals
     totals = {t: 0 for t in types}
     for row in rows:
-        tx_t = row["type"]
-        if tx_t in types:
-            totals[tx_t] += float(row["amount"] or 0)
+        if row.type in types:
+            totals[row.type] += float(row.amount or 0)
 
-    # Calculate net total over time for the second chart
+    # Net total over time
     net_data = []
     net_labels = []
     running_total = 0
-
-    # Use rows ordered by timestamp, update running total per transaction
     for row in rows:
-        amt = float(row["amount"] or 0)
-        tx_t = row["type"]
-        if tx_t in ["deposit", "transfer_in"]:
+        amt = float(row.amount or 0)
+        if row.type in ["deposit", "transfer_in"]:
             running_total += amt
-        elif tx_t in ["withdraw", "transfer_out"]:
+        elif row.type in ["withdraw", "transfer_out"]:
             running_total -= amt
-        # Append timestamp and running total after each transaction
-        net_labels.append(row["timestamp"][:16])
+        net_labels.append(row.timestamp.strftime("%Y-%m-%d %H:%M"))
         net_data.append(round(running_total, 2))
 
-    # Fetch user info
-    user = db.execute("SELECT username, balance FROM users WHERE id = ?", (user_id,)).fetchone()
-
-    notifications = db.execute("""
-        SELECT * FROM notifications
-        WHERE user_id = ?
-        ORDER BY timestamp DESC
-        LIMIT 5
-    """, (user_id,)).fetchall()
-
-    # If user is None
-    if user is None:
+    user = User.query.get(user_id)
+    if not user:
         flash("User not found. Please log in again.")
         session.clear()
         return redirect(url_for("login"))
 
+    notifications = Notification.query.filter_by(user_id=user_id)\
+        .order_by(Notification.timestamp.desc())\
+        .limit(5).all()
+
     return render_template(
         "dashboard.html",
-        username=user["username"],
-        balance=user["balance"],
+        username=user.username,
+        balance=user.balance,
         labels=labels,
         type_data=type_data,
         totals=totals,
@@ -421,8 +374,7 @@ def dashboard():
         net_data=net_data,
         net_labels=net_labels
     )
-
-@app.route("/traFnsaction", methods=["POST"])
+@app.route("/transaction", methods=["POST"])
 def transaction():
     if "user_id" not in session:
         return redirect(url_for("login"))
@@ -440,30 +392,34 @@ def transaction():
     
     note = request.form.get("note", "")
 
-    db = get_db()
-    user = db.execute("SELECT balance FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    balance = user["balance"] if user else 0
+    user = User.query.get(session["user_id"])
+    if not user:
+        flash("User not found.")
+        return redirect(url_for("dashboard"))
 
     if action == "deposit":
-        new_balance = balance + amount
+        user.balance += amount
         flash(f"Deposited ${amount:.2f}!")
     elif action == "withdraw":
-        if amount > balance:
+        if amount > user.balance:
             flash("Insufficient funds.")
             return redirect(url_for("dashboard"))
-        new_balance = balance - amount
+        user.balance -= amount
         flash(f"Withdrew ${amount:.2f}.")
     else:
         flash("Invalid action.")
         return redirect(url_for("dashboard"))
 
-    db.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, session["user_id"]))
-    db.execute("""
-        INSERT INTO transactions (user_id, type, amount, note)
-        VALUES (?, ?, ?, ?)
-    """, (session["user_id"], action, amount, note))
-    db.commit()
+    tx = Transaction(
+        user_id=user.id,
+        type=action,
+        amount=amount,
+        note=note
+    )
+    db.session.add(tx)
+    db.session.commit()
     return redirect(url_for("dashboard"))
+
 
 @app.route("/transfer", methods=["POST"])
 def transfer():
@@ -479,83 +435,56 @@ def transfer():
         flash("Amount must be greater than zero.")
         return redirect(url_for("dashboard"))
 
-    db = get_db()
+    sender = User.query.get(sender_id)
+    recipient = User.query.filter_by(username=recipient_username).first()
 
-    # Check if recipient exists
-    recipient = db.execute("SELECT id FROM users WHERE username = ?", (recipient_username,)).fetchone()
     if not recipient:
         flash("Recipient user not found.")
         return redirect(url_for("dashboard"))
 
-    recipient_id = recipient["id"]
-
-    if recipient_id == sender_id:
+    if recipient.id == sender_id:
         flash("You can't transfer money to yourself.")
         return redirect(url_for("dashboard"))
 
-    # Get sender balance
-    sender = db.execute("SELECT balance FROM users WHERE id = ?", (sender_id,)).fetchone()
-    if sender["balance"] < amount:
+    if sender.balance < amount:
         flash("Insufficient funds.")
         return redirect(url_for("dashboard"))
 
     # Perform the transfer
-    db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (amount, sender_id))
-    db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, recipient_id))
+    sender.balance -= amount
+    recipient.balance += amount
 
-    # Log transaction for sender
-    db.execute("""
-        INSERT INTO transactions (user_id, type, amount, note, recipient_id)
-        VALUES (?, 'transfer_out', ?, ?, ?)
-    """, (sender_id, amount, note, recipient_id))
+    db.session.add_all([
+        Transaction(user_id=sender.id, type="transfer_out", amount=amount, note=note, recipient_id=recipient.id),
+        Transaction(user_id=recipient.id, type="transfer_in", amount=amount, note=note, recipient_id=sender.id),
+        Notification(user_id=sender.id, message=f"You sent ${amount:.2f} to {recipient.username}."),
+        Notification(user_id=recipient.id, message=f"You received ${amount:.2f} from {sender.username}.")
+    ])
 
-    # Log transaction for recipient
-    db.execute("""
-        INSERT INTO transactions (user_id, type, amount, note, recipient_id)
-        VALUES (?, 'transfer_in', ?, ?, ?)
-    """, (recipient_id, amount, note, sender_id))
-
-    # Notification when user receives money
-    sender = db.execute("SELECT username FROM users WHERE id = ?", (sender_id,)).fetchone()
-    sender_username = sender["username"]
-
-    sender_message = f"You sent ${amount:.2f} to {recipient_username}."
-    db.execute("INSERT INTO notifications (user_id, message) VALUES (?, ?)", (sender_id, sender_message))
-
-    message = f"You received ${amount:.2f} from {sender_username}."
-    db.execute("INSERT INTO notifications (user_id, message) VALUES (?, ?)", (recipient_id, message))
-
-    db.commit()
+    db.session.commit()
     return redirect(url_for("dashboard"))
+
 
 @app.route("/history")
 def history():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    db = get_db()
     user_id = session["user_id"]
-
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
     tx_type = request.args.get("type")
 
-    query = "SELECT type, amount, timestamp, note FROM transactions WHERE user_id = ?"
-    params = [user_id]
+    query = Transaction.query.filter_by(user_id=user_id)
 
     if start_date:
-        query += " AND timestamp >= ?"
-        params.append(start_date)
+        query = query.filter(Transaction.timestamp >= start_date)
     if end_date:
-        query += " AND timestamp <= ?"
-        params.append(end_date + " 23:59:59")
+        query = query.filter(Transaction.timestamp <= end_date + " 23:59:59")
     if tx_type:
-        query += " AND type = ?"
-        params.append(tx_type)
+        query = query.filter_by(type=tx_type)
 
-    query += " ORDER BY timestamp DESC"
-    transactions = db.execute(query, params).fetchall()
-
+    transactions = query.order_by(Transaction.timestamp.desc()).all()
 
     return render_template("history.html", transactions=transactions)
 
@@ -633,7 +562,7 @@ def debug_users():
 
 def sync_user_balance(user_id):
     db = get_db()
-    user = db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute("SELECT balance FROM users WHERE id = %s", (user_id,)).fetchone()
     if not user:
         return
 
