@@ -9,11 +9,16 @@ from datetime import datetime
 import os
 import csv
 import logging
+from io import StringIO, BytesIO
 from models import db, User, Transaction, Notification, Note
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# Initialize the database
+with app.app_context():
+    db.create_all()
 
 # Configuration
 app.config['DEBUG'] = True
@@ -559,6 +564,9 @@ def debug_users():
     db = get_db()
     users = db.execute("SELECT id, username, email, is_admin FROM users").fetchall()
     return "<br>".join([f"{u['id']}: {u['username']} | {u['email']} | Admin: {u['is_admin']}" for u in users])
+
+def get_db():
+    return db.session
 
 def sync_user_balance(user_id):
     db = get_db()
