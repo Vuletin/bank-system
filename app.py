@@ -617,5 +617,34 @@ def sync_balances():
 def health_check():
     return "OK"
 
+@app.route("/create-admin")
+def create_admin():
+    from models import User, db
+    from flask_bcrypt import Bcrypt
+
+    bcrypt = Bcrypt(app)
+
+    try:
+        # Check if user already exists
+        existing = User.query.filter_by(username="Vuletin").first()
+        if existing:
+            return "User already exists."
+
+        # Create new admin
+        hashed = bcrypt.generate_password_hash("sava").decode("utf-8")
+        user = User(
+            username="Vuletin",
+            email="vuletin92@gmail.com",
+            password=hashed,
+            is_admin=True,
+            is_banned=False,
+            balance=100.0
+        )
+        db.session.add(user)
+        db.session.commit()
+        return "✅ Admin user created successfully!"
+    except Exception as e:
+        return f"❌ Error: {e}"
+
 if __name__ == "__main__":
     app.run(debug=True)
