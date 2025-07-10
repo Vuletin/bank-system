@@ -556,12 +556,6 @@ def export_csv():
                      download_name="transactions.csv",
                      mimetype="text/csv")
 
-@app.route("/debug-users")
-def debug_users():
-    db = get_db()
-    users = db.execute("SELECT id, username, email, is_admin FROM users").fetchall()
-    return "<br>".join([f"{u['id']}: {u['username']} | {u['email']} | Admin: {u['is_admin']}" for u in users])
-
 def get_db():
     return db.session
 
