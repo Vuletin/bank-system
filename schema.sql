@@ -1,5 +1,3 @@
-from flask_sqlalchemy import SQLAlchemy
-db = SQLAlchemy()
 
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
