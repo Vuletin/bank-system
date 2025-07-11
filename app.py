@@ -321,7 +321,10 @@ def dashboard():
     timestamps_seen = set()
 
     for row in rows:
-        ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
+        if hasattr(row.timestamp, "strftime"):
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
+        else:
+            ts = "Unknown"
         if ts not in timestamps_seen:
             labels.append(ts)
             timestamps_seen.add(ts)
@@ -330,10 +333,14 @@ def dashboard():
         type_data[t] = [0] * len(labels)
 
     for row in rows:
-        ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
-        idx = labels.index(ts)
-        if row.type in types:
-            type_data[row.type][idx] += float(row.amount or 0)
+        if hasattr(row.timestamp, "strftime"):
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
+        else:
+            ts = "Unknown"
+        if ts in labels:
+            idx = labels.index(ts)
+            if row.type in types:
+                type_data[row.type][idx] += float(row.amount or 0)
 
     # Totals
     totals = {t: 0 for t in types}

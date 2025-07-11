@@ -11,7 +11,6 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_banned = db.Column(db.Boolean, default=False)
     balance = db.Column(db.Float, default=0.0)
-
 class Transaction(db.Model):
     __tablename__ = 'transactions'
     id = db.Column(db.Integer, primary_key=True)
@@ -19,7 +18,7 @@ class Transaction(db.Model):
     type = db.Column(db.String)
     amount = db.Column(db.Float)
     note = db.Column(db.String)
-    timestamp = db.Column(db.DateTime)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)  # <-- ✅ Default here
     recipient_id = db.Column(db.Integer, nullable=True)
 
 class Notification(db.Model):
