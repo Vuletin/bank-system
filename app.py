@@ -316,31 +316,24 @@ def dashboard():
     rows = query.all()
 
     # Prepare chart data by type
-    labels = []
-    types = ["deposit", "withdraw", "transfer_in", "transfer_out"]
-    type_data = {t: [] for t in types}
-    timestamps_seen = set()
-
-    def safe_timestamp(row):
-        if row.timestamp:
-            return row.timestamp.strftime("%Y-%m-%d %H:%M")
-        return "Unknown"
+    net_data = []
+    net_labels = []
+    running_total = 0
 
     for row in rows:
-        ts = safe_timestamp(row)
-        if ts not in timestamps_seen:
-            labels.append(ts)
-            timestamps_seen.add(ts)
+        amt = float(row.amount or 0)
+        if row.type in ["deposit", "transfer_in"]:
+            running_total += amt
+        elif row.type in ["withdraw", "transfer_out"]:
+            running_total -= amt
 
-    for t in types:
-        type_data[t] = [0] * len(labels)
+        try:
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            ts = "Unknown"
 
-    for row in rows:
-        ts = safe_timestamp(row)
-        if ts in labels:
-            idx = labels.index(ts)
-            if row.type in types:
-                type_data[row.type][idx] += float(row.amount or 0)
+        net_labels.append(ts)
+        net_data.append(round(running_total, 2))
 
         # Totals
         totals = {t: 0 for t in types}
@@ -352,13 +345,20 @@ def dashboard():
     net_data = []
     net_labels = []
     running_total = 0
+
     for row in rows:
         amt = float(row.amount or 0)
         if row.type in ["deposit", "transfer_in"]:
             running_total += amt
         elif row.type in ["withdraw", "transfer_out"]:
             running_total -= amt
-        net_labels.append(row.timestamp.strftime("%Y-%m-%d %H:%M"))
+
+        try:
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            ts = "Unknown"
+
+        net_labels.append(ts)
         net_data.append(round(running_total, 2))
 
     user = User.query.get(user_id)
@@ -518,7 +518,6 @@ def export_csv():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    db = get_db()
     user_id = session.get("user_id")
 
     start_date = request.args.get("start_date")
@@ -546,7 +545,7 @@ def export_csv():
     writer = csv.writer(string_io)
     writer.writerow(["Type", "Amount", "Timestamp", "Note"])
     for tx in transactions:
-        writer.writerow([tx["type"], tx["amount"], tx["timestamp"], tx["note"]])
+        writer.writerow([tx.type, tx.amount, tx.timestamp, tx.note])
 
     # Encode to binary stream
     mem = BytesIO()
@@ -562,9 +561,6 @@ def export_csv():
                      as_attachment=True,
                      download_name="transactions.csv",
                      mimetype="text/csv")
-
-def get_db():
-    return db.session
 
 def sync_user_balance(user_id):
     user = User.query.get(user_id)
@@ -626,37 +622,38 @@ def health_check():
 
 @app.route("/create-admin")
 def create_admin():
-    from flask_bcrypt import Bcrypt
-
-    bcrypt = Bcrypt(app)
-
-    try:
-        # Check if user already exists
-        existing = User.query.filter_by(username="Vuletin").first()
-        if existing:
-            return "User already exists."
-
-        # Create new admin
-        hashed = bcrypt.generate_password_hash("sava").decode("utf-8")
-        user = User(
-            username="Vuletin",
-            email="vuletin92@gmail.com",
-            password=hashed,
-            is_admin=True,
-            is_banned=False,
-            balance=100.0
-        )
-        db.session.add(user)
-        db.session.commit()
-        return "✅ Admin user created successfully!"
-    except Exception as e:
-        return f"❌ Error: {e}"
+    if User.query.filter_by(username="Vuletin").first():
+        return "User already exists."
+    
+    hashed = bcrypt.generate_password_hash("sava").decode("utf-8")
+    user = User(
+        username="Vuletin",
+        email="vuletin92@gmail.com",
+        password=hashed,
+        is_admin=True,
+        is_banned=False,
+        balance=100.0
+    )
+    db.session.add(user)
+    db.session.commit()
+    return redirect(url_for("login"))
 
 @app.route("/debug-users")
 def debug_users():
     from models import User
     users = User.query.all()
     return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
+
+@app.route("/make-admin/<int:user_id>")
+def make_admin(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        flash("User not found.")
+    else:
+        user.is_admin = True
+        db.session.commit()
+        flash(f"✅ User {user.username} is now an admin.")
+    return redirect(url_for("admin_panel"))
 
 if __name__ == "__main__":
     app.run(debug=True)

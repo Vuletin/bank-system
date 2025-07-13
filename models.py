@@ -19,8 +19,9 @@ class Transaction(db.Model):
     type = db.Column(db.String)
     amount = db.Column(db.Float)
     note = db.Column(db.String)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)  # <-- ✅ Default here
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)  # <-- ✅ Default here
     recipient_id = db.Column(db.Integer, nullable=True)
+    
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
