@@ -4,12 +4,14 @@ from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
 from dotenv import load_dotenv
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
+from models import User, db
 import os
 import csv
 import logging
 from io import StringIO, BytesIO
-from models import db, User, Transaction, Notification, Note
+from models import db, User, Transaction, Notification
+from sqlalchemy import func
 
 load_dotenv()
 
@@ -27,7 +29,6 @@ app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -161,7 +162,7 @@ def admin_reset_balance():
             type=tx_type,
             amount=abs(delta),
             note="Admin reset",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
         db.session.add(transaction)
 
@@ -321,7 +322,7 @@ def dashboard():
     timestamps_seen = set()
 
     def safe_timestamp(row):
-        if hasattr(row.timestamp, "strftime") and row.timestamp:
+        if row.timestamp:
             return row.timestamp.strftime("%Y-%m-%d %H:%M")
         return "Unknown"
 
@@ -506,9 +507,9 @@ def add_note():
         flash("Note cannot be empty.")
         return redirect(url_for("dashboard"))
 
-    db = get_db()
-    db.execute("INSERT INTO notes (user_id, content) VALUES (?, ?)", (session["user_id"], content))
-    db.commit()
+    note = Note(user_id=session["user_id"], content=content)
+    db.session.add(note)
+    db.session.commit()
     flash("Note added.")
     return redirect(url_for("dashboard"))
 
@@ -527,18 +528,18 @@ def export_csv():
     query = "SELECT type, amount, timestamp, note FROM transactions WHERE user_id = ?"
     params = [user_id]
 
-    if start_date:
-        query += " AND timestamp >= ?"
-        params.append(start_date)
-    if end_date:
-        query += " AND timestamp <= ?"
-        params.append(end_date + " 23:59:59")
-    if tx_type:
-        query += " AND type = ?"
-        params.append(tx_type)
+    # Use SQLAlchemy ORM instead of raw SQL
+    query_obj = Transaction.query.filter_by(user_id=user_id)
 
-    query += " ORDER BY timestamp DESC"
-    transactions = db.execute(query, params).fetchall()
+    if start_date:
+        query_obj = query_obj.filter(Transaction.timestamp >= start_date)
+    if end_date:
+        query_obj = query_obj.filter(Transaction.timestamp <= end_date + " 23:59:59")
+    if tx_type:
+        query_obj = query_obj.filter_by(type=tx_type)
+
+    query_obj = query_obj.order_by(Transaction.timestamp.desc())
+    transactions = query_obj.all()
 
     # Write to a text stream first
     string_io = StringIO()
@@ -555,7 +556,7 @@ def export_csv():
     # Add today's date to the filename
     timestamp = datetime.now().strftime("%Y-%m-%d")
 
-    filename = f"transactions_{timestamp}.csv"
+    # filename = f"transactions_{timestamp}.csv"
     
     return send_file(mem,
                      as_attachment=True,
@@ -566,50 +567,56 @@ def get_db():
     return db.session
 
 def sync_user_balance(user_id):
-    db = get_db()
-    user = db.execute("SELECT balance FROM users WHERE id = %s", (user_id,)).fetchone()
+    user = User.query.get(user_id)
     if not user:
         return
 
-    recorded_balance = float(user["balance"])
-    rows = db.execute("SELECT type, amount FROM transactions WHERE user_id = ?", (user_id,)).fetchall()
+    recorded_balance = float(user.balance)
 
-    # Recalculate actual balance from history
+    transactions = Transaction.query.filter_by(user_id=user_id).all()
+
     calculated_balance = 0
-    for row in rows:
-        amt = float(row["amount"] or 0)
-        if row["type"] in ["deposit", "transfer_in"]:
+    for tx in transactions:
+        amt = float(tx.amount or 0)
+        if tx.type in ["deposit", "transfer_in"]:
             calculated_balance += amt
-        elif row["type"] in ["withdraw", "transfer_out"]:
+        elif tx.type in ["withdraw", "transfer_out"]:
             calculated_balance -= amt
 
-    # Check for mismatch
     diff = round(recorded_balance - calculated_balance, 2)
+
     if diff != 0:
         tx_type = "deposit" if diff > 0 else "withdraw"
-        db.execute("""
-            INSERT INTO transactions (user_id, type, amount, note, timestamp)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """, (user_id, tx_type, abs(diff), "Balance sync correction"))
-        db.commit()
+        correction = Transaction(
+            user_id=user_id,
+            type=tx_type,
+            amount=abs(diff),
+            note="Balance sync correction"
+        )
+        db.session.add(correction)
+        db.session.commit()
 
 @app.route("/admin/wipe_user/<int:user_id>", methods=["POST"])
 @admin_required
 def wipe_user(user_id):
-    db = get_db()
-    db.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
-    db.execute("UPDATE users SET balance = 0 WHERE id = ?", (user_id,))
-    db.commit()
+    # Delete all transactions
+    Transaction.query.filter_by(user_id=user_id).delete()
+
+    # Reset balance
+    user = User.query.get(user_id)
+    if user:
+        user.balance = 0.0
+
+    db.session.commit()
     flash(f"All history wiped and balance reset for user #{user_id}")
-    return redirect(url_for("admin"))
+    return redirect(url_for("admin_panel"))
 
 @app.route("/admin/sync_balances")
 @admin_required
 def sync_balances():
-    db = get_db()
-    users = db.execute("SELECT id FROM users").fetchall()
+    users = User.query.with_entities(User.id).all()
     for user in users:
-        sync_user_balance(user["id"])
+        sync_user_balance(user.id)
     flash("All user balances have been synchronized based on transactions.")
     return redirect(url_for("admin_panel"))
 
@@ -619,7 +626,6 @@ def health_check():
 
 @app.route("/create-admin")
 def create_admin():
-    from models import User, db
     from flask_bcrypt import Bcrypt
 
     bcrypt = Bcrypt(app)
@@ -645,7 +651,7 @@ def create_admin():
         return "✅ Admin user created successfully!"
     except Exception as e:
         return f"❌ Error: {e}"
-    
+
 @app.route("/debug-users")
 def debug_users():
     from models import User

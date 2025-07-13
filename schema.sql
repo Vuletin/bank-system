@@ -1,25 +1,33 @@
-
 CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     username TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
+    is_admin BOOLEAN DEFAULT FALSE,
+    is_banned BOOLEAN DEFAULT FALSE,
     balance REAL DEFAULT 0
 );
 
 CREATE TABLE transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
     type TEXT,
     amount REAL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id)
+    note TEXT,
+    recipient_id INTEGER,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, nullable=False, unique=True)
-    email = db.Column(db.String, nullable=False, unique=True)
-    password = db.Column(db.String, nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    is_banned = db.Column(db.Boolean, default=False)
+CREATE TABLE notes (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    content TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    message TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
