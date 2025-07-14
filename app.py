@@ -633,8 +633,8 @@ def create_admin():
         return "✅ Admin Vuletin created."
     return "⚠️ Vuletin already exists."
 
-@app.route("/make-admin/<int:user_id>")
-def make_admin(user_id):
+@app.route("/create-admin/<int:user_id>")
+def create_admin(user_id):
     user = User.query.get(user_id)
     if not user:
         return f"❌ User with ID {user_id} not found."
@@ -652,7 +652,7 @@ def debug_users():
     users = User.query.all()
     return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
 
-@app.route("/make-admin/<int:user_id>")
+@app.route("/   -admin/<int:user_id>")
 def make_admin(user_id):
     user = User.query.get(user_id)
     if not user:
