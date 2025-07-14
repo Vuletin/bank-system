@@ -212,11 +212,9 @@ def recreate_admin():
     db.session.commit()
     print("✅ Admin user recreated with username: admin and password: sava")
 
-
 @app.route("/whoami")
 def whoami():
-    return f"Logged in as {session.get('username')} | Admin: {session.get('is_admin')}"
-
+    return f"User: {session.get('username')} | ID: {session.get('user_id')} | Admin: {session.get('is_admin')}"
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -314,6 +312,8 @@ def dashboard():
 
     query = query.order_by(Transaction.timestamp.asc())
     rows = query.all()
+
+    types = ["deposit", "withdraw", "transfer_in", "transfer_out"]
 
     # Prepare chart data by type
     net_data = []
@@ -622,21 +622,29 @@ def health_check():
 
 @app.route("/create-admin")
 def create_admin():
-    if User.query.filter_by(username="Vuletin").first():
-        return "User already exists."
-    
-    hashed = bcrypt.generate_password_hash("sava").decode("utf-8")
-    user = User(
-        username="Vuletin",
-        email="vuletin92@gmail.com",
-        password=hashed,
-        is_admin=True,
-        is_banned=False,
-        balance=100.0
-    )
-    db.session.add(user)
+    from models import User
+    from app import db, bcrypt
+
+    if not User.query.filter_by(username="Vuletin").first():
+        hashed_pw = bcrypt.generate_password_hash("yourpassword").decode("utf-8")
+        user = User(username="Vuletin", email="vuletin92@gmail.com", password=hashed_pw, is_admin=True)
+        db.session.add(user)
+        db.session.commit()
+        return "✅ Admin Vuletin created."
+    return "⚠️ Vuletin already exists."
+
+@app.route("/make-admin/<int:user_id>")
+def make_admin(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return f"❌ User with ID {user_id} not found."
+
+    if user.is_admin:
+        return f"✅ User '{user.username}' is already an admin."
+
+    user.is_admin = True
     db.session.commit()
-    return redirect(url_for("login"))
+    return f"✅ User '{user.username}' promoted to admin."
 
 @app.route("/debug-users")
 def debug_users():
