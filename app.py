@@ -176,6 +176,16 @@ def home():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        flash("Username already exists.")
+        return render_template("register.html")
+
+    existing_email = User.query.filter_by(email=email).first()
+    if existing_email:
+        flash("Email already exists.")
+        return render_template("register.html")
+
     if request.method == "POST":
         username = request.form["username"]
         password = request.form.get("password")
@@ -332,11 +342,11 @@ def dashboard():
         net_labels.append(ts)
         net_data.append(round(running_total, 2))
 
-        # Totals
-        totals = {t: 0 for t in types}
-        for row in rows:
-            if row.type in types:
-                totals[row.type] += float(row.amount or 0)
+    # Totals
+    totals = {t: 0 for t in types}
+    for row in rows:
+        if row.type in types:
+            totals[row.type] += float(row.amount or 0)
 
     # Net total over time
     net_data = []
@@ -617,19 +627,6 @@ def sync_balances():
 def health_check():
     return "OK"
 
-@app.route("/create-admin")
-def create_admin():
-    from models import User
-    from app import db, bcrypt
-
-    if not User.query.filter_by(username="Vuletin").first():
-        hashed_pw = bcrypt.generate_password_hash("yourpassword").decode("utf-8")
-        user = User(username="Vuletin", email="vuletin92@gmail.com", password=hashed_pw, is_admin=True)
-        db.session.add(user)
-        db.session.commit()
-        return "✅ Admin Vuletin created."
-    return "⚠️ Vuletin already exists."
-
 @app.route("/create-admin/<int:user_id>")
 def create_admin(user_id):
     user = User.query.get(user_id)
@@ -643,7 +640,7 @@ def create_admin(user_id):
     db.session.commit()
     return f"✅ User '{user.username}' promoted to admin."
 
-@app.route("/   -admin/<int:user_id>")
+@app.route("/make-admin/<int:user_id>")
 def make_admin(user_id):
     user = User.query.get(user_id)
     if not user:
@@ -656,8 +653,9 @@ def make_admin(user_id):
 
 @app.route("/debug-users")
 def debug_users():
-    from models import User
     users = User.query.all()
+    if not users:
+        return "❌ No users found."
     return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
 
 # Create tables
