@@ -1,11 +1,13 @@
 from flask import Flask, render_template, request, redirect, session, url_for, flash, send_file
 from flask_bcrypt import Bcrypt
 from flask_mail import Mail, Message
+from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import URLSafeTimedSerializer
 from dotenv import load_dotenv
 from functools import wraps
 from datetime import datetime, timezone
 from models import User, db
+from datetime import datetime
 import os
 import csv
 import logging
@@ -39,10 +41,6 @@ print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])
 bcrypt = Bcrypt(app)
 mail = Mail(app)
 db.init_app(app)
-
-# Create tables
-with app.app_context():
-    db.create_all()
 
 # Utilities
 def generate_reset_token(email):
@@ -201,7 +199,6 @@ def logout():
     session.clear()
     flash("You have been logged out.")
     return redirect(url_for("login"))
-
 
 def recreate_admin():
     password = "sava"  # Or whatever password you want
@@ -646,12 +643,6 @@ def create_admin(user_id):
     db.session.commit()
     return f"✅ User '{user.username}' promoted to admin."
 
-@app.route("/debug-users")
-def debug_users():
-    from models import User
-    users = User.query.all()
-    return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
-
 @app.route("/   -admin/<int:user_id>")
 def make_admin(user_id):
     user = User.query.get(user_id)
@@ -662,6 +653,16 @@ def make_admin(user_id):
         db.session.commit()
         flash(f"✅ User {user.username} is now an admin.")
     return redirect(url_for("admin_panel"))
+
+@app.route("/debug-users")
+def debug_users():
+    from models import User
+    users = User.query.all()
+    return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
+
+# Create tables
+with app.app_context():
+    db.create_all()
 
 if __name__ == "__main__":
     app.run(debug=True)
