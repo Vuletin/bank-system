@@ -6,14 +6,12 @@ from itsdangerous import URLSafeTimedSerializer
 from dotenv import load_dotenv
 from functools import wraps
 from datetime import datetime, timezone
-from models import User, db
-from datetime import datetime
+from io import StringIO, BytesIO
+from models import Note, db, User, Transaction, Notification
+from sqlalchemy import func
 import os
 import csv
 import logging
-from io import StringIO, BytesIO
-from models import db, User, Transaction, Notification
-from sqlalchemy import func
 
 load_dotenv()
 
@@ -100,12 +98,13 @@ def edit_user(user_id):
         username = request.form["username"]
         email = request.form.get("email")
         user.username = username
-        user.email = email
+        user.email = email.lower()
         db.session.commit()
         flash("User updated.")
         return redirect(url_for("admin_panel"))
 
     return render_template("edit_user.html", user=user)
+
 @app.route("/ban_user/<int:user_id>", methods=["POST"])
 @admin_required
 def ban_user(user_id):
@@ -176,56 +175,52 @@ def home():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    username = request.form.get("username", "").strip().lower()
-    existing_user = User.query.filter_by(username=username).first()
-    email = request.form.get("email", "").strip().lower()
-    existing_email = User.query.filter_by(email=email).first()
-    if existing_user:
-        flash("Username already exists.")
-        return render_template("register.html")
-
-    existing_email = User.query.filter_by(email=email).first()
-    if existing_email:
-        flash("Email already exists.")
-        return render_template("register.html")
-
     if request.method == "POST":
-        username = request.form["username"]
+        username = request.form.get("username", "").strip().lower()
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password")
-        email = request.form["email"]
-        hashed = bcrypt.generate_password_hash(password).decode("utf-8")
 
-        existing_user = User.query.filter_by(username=username).first()
-        if existing_user:
+        # Validation
+        if not username or not email or not password:
+            flash("All fields are required.")
+            return render_template("register.html")
+
+        if User.query.filter_by(username=username).first():
             flash("Username already exists.")
             return render_template("register.html")
 
-        user = User(username=username, password=hashed, email=email)
+        if User.query.filter_by(email=email).first():
+            flash("Email already exists.")
+            return render_template("register.html")
+
+        # Register new user
+        hashed = bcrypt.generate_password_hash(password).decode("utf-8")
+        user = User(username=username, email=email, password=hashed)
         db.session.add(user)
         db.session.commit()
-        flash("Registration successful. Please log in.")
+        flash("Registration successful! Please log in.")
         return redirect(url_for("login"))
 
     return render_template("register.html")
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("You have been logged out.")
-    return redirect(url_for("login"))
 
 def recreate_admin():
+    existing = User.query.filter_by(username="admin").first()
+    if existing:
+        print("✅ Admin user already exists.")
+        return
+
     password = "sava"
     hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
 
     new_admin = User(
         username="admin",
-        email="admin@example.com",  # add a valid dummy email
+        email="admin@example.com",
         password=hashed_pw,
         is_admin=True
     )
     db.session.add(new_admin)
     db.session.commit()
-    print("✅ Admin user recreated with username: admin and password: sava")
+    print("✅ Admin user created: admin / sava")
 
 @app.route("/whoami")
 def whoami():
@@ -355,26 +350,6 @@ def dashboard():
         if row.type in types:
             totals[row.type] += float(row.amount or 0)
 
-    # Net total over time
-    net_data = []
-    net_labels = []
-    running_total = 0
-
-    for row in rows:
-        amt = float(row.amount or 0)
-        if row.type in ["deposit", "transfer_in"]:
-            running_total += amt
-        elif row.type in ["withdraw", "transfer_out"]:
-            running_total -= amt
-
-        try:
-            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            ts = "Unknown"
-
-        net_labels.append(ts)
-        net_data.append(round(running_total, 2))
-
     user = User.query.get(user_id)
     if not user:
         flash("User not found. Please log in again.")
@@ -389,8 +364,6 @@ def dashboard():
         "dashboard.html",
         username=user.username,
         balance=user.balance,
-        labels=labels,
-        type_data=type_data,
         totals=totals,
         notifications=notifications,
         net_data=net_data,
@@ -449,8 +422,12 @@ def transfer():
         return redirect(url_for("login"))
 
     sender_id = session["user_id"]
-    recipient_username = request.form.get("recipient")
-    amount = float(request.form.get("amount", 0))
+    recipient_username = request.form.get("recipient", "").strip().lower()
+    try:
+        amount = float(request.form.get("amount", 0))
+    except ValueError:
+        flash("Invalid amount.")
+        return redirect(url_for("dashboard"))
     note = request.form.get("note", "")
 
     if amount <= 0:
@@ -501,7 +478,8 @@ def history():
     if start_date:
         query = query.filter(Transaction.timestamp >= start_date)
     if end_date:
-        query = query.filter(Transaction.timestamp <= end_date + " 23:59:59")
+        end_datetime = end_date + " 23:59:59"
+        query = query.filter(Transaction.timestamp <= end_datetime)
     if tx_type:
         query = query.filter_by(type=tx_type)
 
