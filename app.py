@@ -41,6 +41,13 @@ mail = Mail(app)
 db.init_app(app)
 
 # Utilities
+def is_valid_date(date_str):
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
 def generate_reset_token(email):
     s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
     return s.dumps(email, salt='password-reset-salt')
@@ -520,9 +527,9 @@ def export_csv():
     # Use SQLAlchemy ORM instead of raw SQL
     query_obj = Transaction.query.filter_by(user_id=user_id)
 
-    if start_date:
+    if start_date and is_valid_date(start_date):
         query_obj = query_obj.filter(Transaction.timestamp >= start_date)
-    if end_date:
+    if end_date and is_valid_date(end_date):
         query_obj = query_obj.filter(Transaction.timestamp <= end_date + " 23:59:59")
     if tx_type:
         query_obj = query_obj.filter_by(type=tx_type)
@@ -581,6 +588,7 @@ def sync_user_balance(user_id):
         )
         db.session.add(correction)
         db.session.commit()
+        print(f"[SYNC] Corrected balance by {diff:.2f} for user ID {user_id}")
 
 @app.route("/admin/wipe_user/<int:user_id>", methods=["POST"])
 @admin_required
@@ -610,24 +618,14 @@ def sync_balances():
 def health_check():
     return "OK"
 
-@app.route("/create-admin/<int:user_id>")
-def create_admin(user_id):
-    user = User.query.get(user_id)
-    if not user:
-        return f"❌ User with ID {user_id} not found."
-
-    if user.is_admin:
-        return f"✅ User '{user.username}' is already an admin."
-
-    user.is_admin = True
-    db.session.commit()
-    return f"✅ User '{user.username}' promoted to admin."
-
 @app.route("/make-admin/<int:user_id>")
+@admin_required
 def make_admin(user_id):
     user = User.query.get(user_id)
     if not user:
         flash("User not found.")
+    elif user.is_admin:
+        flash(f"✅ User {user.username} is already an admin.")
     else:
         user.is_admin = True
         db.session.commit()
