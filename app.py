@@ -632,6 +632,17 @@ def make_admin(user_id):
         flash(f"✅ User {user.username} is now an admin.")
     return redirect(url_for("admin_panel"))
 
+@app.route("/promote-user/<string:username>")
+def promote_user(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return f"❌ User '{username}' not found."
+    if user.is_admin:
+        return f"✅ User '{username}' is already an admin."
+    user.is_admin = True
+    db.session.commit()
+    return f"✅ User '{username}' promoted to admin."
+
 @app.route("/debug-users")
 def debug_users():
     users = User.query.all()
