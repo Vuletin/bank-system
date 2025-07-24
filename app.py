@@ -68,6 +68,12 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.")
+    return redirect(url_for("login"))
+
 # Admin Routes
 @app.route("/admin")
 @admin_required
