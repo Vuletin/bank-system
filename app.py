@@ -343,7 +343,12 @@ def dashboard():
     date_totals = {}
 
     for row in rows:
-        ts = row.timestamp.strftime("%Y-%m-%d")
+        # ✅ Make sure timestamp is valid
+        if row.timestamp:
+            ts = row.timestamp.strftime("%Y-%m-%d")
+        else:
+            ts = "Unknown"
+
         if ts not in date_totals:
             date_totals[ts] = {t: 0 for t in types}
 
@@ -354,7 +359,7 @@ def dashboard():
     labels = sorted_dates
     for t in types:
         type_data[t] = [round(date_totals[date].get(t, 0), 2) for date in sorted_dates]
-    
+
     net_data = []
     net_labels = []
     running_total = 0
@@ -362,16 +367,15 @@ def dashboard():
     for row in rows:
         amt = float(row.amount or 0)
 
-        # Keep a running total for line chart
         if row.type in ["deposit", "transfer_in"]:
             running_total += amt
         elif row.type in ["withdraw", "transfer_out"]:
             running_total -= amt
 
-        # Get timestamp safely
-        try:
+        # ✅ Check timestamp here too
+        if row.timestamp:
             ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
-        except Exception:
+        else:
             ts = "Unknown"
 
         net_labels.append(ts)
