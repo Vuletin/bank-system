@@ -337,18 +337,38 @@ def dashboard():
 
     types = ["deposit", "withdraw", "transfer_in", "transfer_out"]
 
-    # Prepare chart data by type
+    # Prepare data for charts
+    labels = []
+    type_data = {t: [] for t in types}
+    date_totals = {}
+
+    for row in rows:
+        ts = row.timestamp.strftime("%Y-%m-%d")
+        if ts not in date_totals:
+            date_totals[ts] = {t: 0 for t in types}
+
+        if row.type in types:
+            date_totals[ts][row.type] += float(row.amount or 0)
+
+    sorted_dates = sorted(date_totals.keys())
+    labels = sorted_dates
+    for t in types:
+        type_data[t] = [round(date_totals[date].get(t, 0), 2) for date in sorted_dates]
+    
     net_data = []
     net_labels = []
     running_total = 0
 
     for row in rows:
         amt = float(row.amount or 0)
+
+        # Keep a running total for line chart
         if row.type in ["deposit", "transfer_in"]:
             running_total += amt
         elif row.type in ["withdraw", "transfer_out"]:
             running_total -= amt
 
+        # Get timestamp safely
         try:
             ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
         except Exception:
@@ -380,7 +400,9 @@ def dashboard():
         totals=totals,
         notifications=notifications,
         net_data=net_data,
-        net_labels=net_labels
+        net_labels=net_labels,
+        labels=labels,
+        type_data=type_data
     )
 
 @app.route("/transaction", methods=["POST"])
