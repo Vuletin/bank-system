@@ -344,7 +344,7 @@ def dashboard():
 
     for row in rows:
         if row.timestamp:
-            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")  # ✅ now hour+minute
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")
         else:
             ts = "Unknown"
 
