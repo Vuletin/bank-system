@@ -71,7 +71,7 @@ def admin_required(f):
 @app.route("/logout")
 def logout():
     session.clear()
-    flash("You have been logged out.")
+    flashF("You have been logged out.")
     return redirect(url_for("login"))
 
 # Admin Routes
@@ -343,9 +343,8 @@ def dashboard():
     date_totals = {}
 
     for row in rows:
-        # ✅ Make sure timestamp is valid
         if row.timestamp:
-            ts = row.timestamp.strftime("%Y-%m-%d")
+            ts = row.timestamp.strftime("%Y-%m-%d %H:%M")  # ✅ now hour+minute
         else:
             ts = "Unknown"
 
