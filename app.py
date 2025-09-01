@@ -29,6 +29,7 @@ app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -38,6 +39,7 @@ print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])
 # Extensions
 bcrypt = Bcrypt(app)
 mail = Mail(app)
+db = SQLAlchemy(app)
 db.init_app(app)
 
 # Utilities
