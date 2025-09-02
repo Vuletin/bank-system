@@ -681,6 +681,8 @@ def debug_users():
         return "❌ No users found."
     return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
 
+db.create_all()
+
 # Create tables
 with app.app_context():
     db.create_all()
