@@ -16,11 +16,15 @@ import logging
 
 load_dotenv()
 
+bcrypt = Bcrypt()
+mail = Mail()
+migrate = Migrate()
+db = SQLAlchemy()
+
 def create_app():
     app = Flask(__name__)
 
     # Configuration
-    app.config['DEBUG'] = True
     app.config['PROPAGATE_EXCEPTIONS'] = True
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
     app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
@@ -38,10 +42,33 @@ def create_app():
     print("MAIL_PASSWORD:", app.config['MAIL_PASSWORD'])
 
     # Extensions
-    bcrypt = Bcrypt(app)
-    mail = Mail(app)
-    db = SQLAlchemy()
-    migrate = Migrate()
+    db.init_app(app)
+    migrate.init_app(app, db)
+    bcrypt.init_app(app)
+    mail.init_app(app)
+
+       # Config
+    if os.getenv("FLASK_ENV") == "production":
+        app.config.from_object("config.ProductionConfig")
+    else:
+        app.config.from_object("config.DevelopmentConfig")
+
+    # Init extensions
+    db.init_app(app)
+    migrate.init_app(app, db)
+    bcrypt.init_app(app)
+    mail.init_app(app)
+
+    register_routes(app)
+    return app
+
+# --- Routes ---
+def register_routes(app):
+    @app.route("/")
+    def home():
+        if "user_id" in session:
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login"))
 
     # Utilities
     def is_valid_date(date_str):
@@ -680,27 +707,6 @@ def create_app():
         return "<br>".join([f"{u.id}: {u.username} | {u.email} | Admin: {u.is_admin}" for u in users])
 
     app = create_app()
-
-    @app.route("/")
-    def home():
-        if "user_id" in session:
-            return redirect(url_for("dashboard"))
-        return redirect(url_for("login"))
-    
-    # Config — choose based on environment
-    if os.getenv("FLASK_ENV") == "production":
-        app.config.from_object("config.ProductionConfig")
-    else:
-        app.config.from_object("config.DevelopmentConfig")
-
-    # Initialize database and migration
-    db.init_app(app)
-    migrate.init_app(app, db)
-
-    # Register routes AFTER app is created
-    register_routes(app)
-
-    return app
 
 # --- Run Locally ---
 if __name__ == "__main__":
