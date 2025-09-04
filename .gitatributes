@@ -1,0 +1,13 @@
+# Always normalize line endings to LF in repo
+* text=auto
+
+# Python files should always use LF
+*.py text eol=lf
+
+# SQL files should always use LF
+*.sql text eol=lf
+
+# HTML, CSS, JS should use LF
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
