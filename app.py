@@ -9,6 +9,8 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
+    
+    print("DATABASE_URL at startup:", os.getenv("DATABASE_URL"))
 
     # Configuration
     app = Flask(__name__)
