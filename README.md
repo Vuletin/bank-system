@@ -2,16 +2,20 @@
 
 A full-featured automated bank system written in Python using the Flask web framework. This project was developed as the final assignment for CS50, demonstrating understanding of backend web development, frontend templating, databases, user authentication, and secure financial logic. It simulates the core functionality of a basic online banking platform and includes an admin panel for user management and system maintenance.
 
-##🎥 Video Demo
+## 🎥 Video Demo
 [submit50 cs50/problems/2025/x/project](https://youtu.be/uvWxghlOhAs)
 
-##🧠 Project Overview
+## 🧠 Project Overview
 
 This system allows users to register securely, manage their bank account, view their transaction history, and perform actions such as deposits, withdrawals, and transfers to other users. The app includes built-in error handling, input validation, and user-friendly feedback for a seamless experience.
 
 Users can also view statistics about their finances through a graphical dashboard, with support for filtering by transaction type or date. Transaction history can be exported in CSV format, and charts (e.g. bar graphs or line graphs) can be exported as images for personal records.
 
 The system was built with a focus on simplicity, security, and extensibility. While it is currently using SQLite for simplicity, the database layer is designed to be portable to PostgreSQL or MySQL in the future.
+
+## 🌐 Live Demo
+
+* **Backend (API):** (https://bank-system-7cp1.onrender.com)
 
 ## 🚀 Features
 
