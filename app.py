@@ -10,7 +10,6 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     
-    print("DATABASE_URL at startup:", os.getenv("DATABASE_URL")) # Debugging line
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
 
@@ -42,10 +41,12 @@ def create_app():
 
     # --- Register routes ---
     register_routes(app)
-
+    
     return app
+
 
 # --- Run Locally ---
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)  # use_reloader=False to prevent double initialization
+    
