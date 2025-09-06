@@ -10,6 +10,10 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
 
+    @app.route("/healthz")
+    def health_check():
+        return "OK", 200
+
     # Configuration
     app = Flask(__name__)
     app.config['PROPAGATE_EXCEPTIONS'] = True
