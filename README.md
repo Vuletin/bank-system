@@ -73,7 +73,7 @@ Open http://127.0.0.1:5000 in your browser.
 
 5. Before first run, create db.sqlite3 using schema.sql or allow the app to create it automatically.
 
-##🔧 Design Decisions
+## 🔧 Design Decisions
 
 Several key design decisions were made during development:
 
@@ -89,7 +89,7 @@ Admin-only actions are protected via decorators and role checks: Ensuring that o
 
 Clean session handling: Session data is minimal and server-side checks are performed to prevent session hijacking or privilege escalation.
 
-##🔮 Future Improvements
+## 🔮 Future Improvements
 
 This app is built to be modular and extensible. Planned features include:
 
@@ -105,7 +105,7 @@ Real-time notifications via websockets or email.
 
 Mobile-friendly responsive layout.
 
-##✅ Summary
+## ✅ Summary
 
 This project showcases full-stack web development with a focus on secure financial operations, clean UI, and practical data management. It includes most features you'd expect from an entry-level online banking interface and can be extended into a full SaaS-style platform. Whether you're checking your balance or auditing a year’s worth of transactions, this system handles it all with clarity and control.
 
