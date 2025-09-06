@@ -15,7 +15,7 @@ The system was built with a focus on simplicity, security, and extensibility. Wh
 
 ## 🌐 Live Demo
 
-* **Test the app yourself:** (https://bank-system-7cp1.onrender.com)
+* **Test the app yourself:** [(https://bank-system-7cp1.onrender.com)](https://bank-system-7cp1.onrender.com)
 * ⚠ It's running on free hosting so wait 30 sec to load
 
 ## 🚀 Features
