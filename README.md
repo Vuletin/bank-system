@@ -38,7 +38,7 @@ Notifications System: Users receive alerts (coming soon) for important events (e
 
 Security: Secure password hashing (bcrypt), input validation, CSRF protection via Flask forms.
 
-Database: Data is stored in a normalized SQLite database, with relational tables for users, transactions, and session tracking.
+Database: Transition from SQLite to PostgreSQL for better scalability, with relational tables for users, transactions, and session tracking.
 
 ## 📂 File Structure and Explanation
 
@@ -98,8 +98,6 @@ Budget planning tools for users to manage spending and savings goals.
 OAuth2 integration (e.g., Google, GitHub login).
 
 Docker containerization for deployment ease.
-
-Transition from SQLite to PostgreSQL for better scalability.
 
 Real-time notifications via websockets or email.
 
